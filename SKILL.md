@@ -39,6 +39,25 @@ they are one click from opening.
 
 Then say what to do with them: paste `brief.md`, upload the sheets.
 
+### Acquisition fallback for URLs
+
+Direct ingest is always the default. If URL acquisition/download fails, do **not**
+automatically retry and do **not** automatically start screen recording. Ask the
+owner which recovery path they want:
+
+- **Retry direct ingest** — retry the original URL path once.
+- **Try screen-recording fallback** — capture the actually rendered player/UI as a
+  local recording, then feed that local recording back into the normal
+  `quick`/`probe`/`scan`/`read` pipeline.
+
+Screen recording is an acquisition fallback, not a new analysis mode. Prefer the
+original local/downloaded media whenever direct ingest works because it preserves
+source quality and avoids real-time playback overhead. Use the recording path when
+direct ingest cannot access the media or when the owner specifically wants the
+rendered UI, captions, overlays, or app/player behavior included in the analysis.
+Do not start screen recording without the owner's explicit choice after the
+failure.
+
 Offering your own read afterwards is fine and often useful — just do it **in
 addition, never instead of** attaching the files. If you do, flag it as
 provisional: `brief.md`'s findings each carry a `Check:` line, so a view formed
@@ -73,8 +92,10 @@ no length limit.
 - **Do NOT pass `--whisper-model`.** The default is already `large-v3-turbo`.
   Naming a smaller model to save time produced ten transcription errors on a
   real ad, the product name among them.
-- **Do NOT pass `--frames` or `--grid`.** The defaults sample one moment per
-  second and pick a grid that keeps tiles legible for the clip's aspect ratio.
+- **Do NOT pass `--frames` or `--grid`.** For `extract`, the defaults use 12
+  evenly spaced moments and pick a grid that keeps tiles legible for the clip's
+  aspect ratio. `quick` and `read` use the separate sampling ladder documented
+  below; do not describe those modes as using the 12-frame `extract` default.
 
 Override only when the owner asks for something specific.
 
