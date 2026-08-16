@@ -94,7 +94,7 @@ no length limit.
   real ad, the product name among them.
 - **Do NOT pass `--frames` or `--grid`.** For `extract`, the defaults use 12
   evenly spaced moments and pick a grid that keeps tiles legible for the clip's
-  aspect ratio. `quick` and `read` use the separate sampling ladder documented
+  aspect ratio. `quick` and `read` use the adaptive sampling policy documented
   below; do not describe those modes as using the 12-frame `extract` default.
 
 Override only when the owner asks for something specific.
@@ -215,7 +215,7 @@ capability the host provides.
 | `--vendor` | `anthropic`, `openai`, `gemini`, `generic`. Sets the token model behind `--max-tokens`. |
 | `--fps N` | Force a sampling rate. Bypasses the frame cap entirely — a stated rate is honoured on a 30-second clip and a 30-minute one alike. You own the cost. |
 | `--max-tokens N` | Budget **tripwire**, default 20000. Warns and reports the affordable window; never silently widens the interval. |
-| `--max-frames N` | Ladder ceiling, default 100. |
+| `--max-frames N` | Automatic-sampling frame ceiling, default 100. |
 | `--timestamps 1:02 1:14` | Force these moments in; they survive dedup. Read the transcript first, then target the moments the speaker flags ("as you can see here"). |
 | `--mode scene\|keyframe\|uniform` | Default `scene`. `keyframe` is fastest. `uniform` gives even coverage regardless of content. |
 | `--no-dedup` | Keep visually near-identical frames. Use when you are hunting a tiny on-screen change and would rather pay than miss it. |
@@ -226,21 +226,28 @@ at or after each one, so error is bounded by one frame interval (0.04s at 25fps)
 
 ## Sampling rate
 
-Frame count comes from duration, not from the token budget. Two ladders:
+Frame count comes from duration, not from the token budget. Automatic sampling
+uses a smooth coverage curve rather than duration buckets: the desired interval
+grows with the square root of the window length and is capped at 4 seconds before
+the frame ceiling is applied. A named `--start/--end` window tightens that
+interval by 1.75x because the caller has already identified the part that needs
+closer inspection.
 
-| Window | Full scan (no `--start/--end`) | Named window |
+Typical defaults with `--max-frames 100`:
+
+| Window | Wide / whole clip | Named window |
 |---|---|---|
-| 5s | 12 frames | 10 (2fps) |
-| 15s | 15 (1fps) | 30 (2fps) |
-| 30s | 30 (1fps) | 60 (2fps) |
-| 1 min | 40 | 80 |
-| 2 min | 60 (every 2s) | 100 |
-| 10 min | 80 | 100 |
-| 30 min | 100 (every 18s) | 100 |
+| 5s | 12 frames | 18 frames |
+| 15s | 12 | 21 |
+| 30s | 17 | 29 |
+| 1 min | 24 | 41 |
+| 2 min | 33 | 58 |
+| 10 min | 100 | 100 |
+| 30 min | 100 | 100 |
 
-**Naming a window buys density** — roughly 2-3x at the same cost, because
-narrowing the range is the signal that you want detail. Coverage does thin on a
-long full scan; that is why `--fps` exists as an uncapped override.
+The curve is continuous, so crossing 30s or 60s never causes a sudden jump in
+sampling behaviour. `--fps` remains an exact uncapped override when a specific
+coverage rate matters more than automatic cost control.
 
 Portrait costs about 3x landscape per frame at the same `--width` (621 vs 197
 tokens at 512 wide), because the frame is taller. 60 vertical frames is ~37k
@@ -265,7 +272,7 @@ defaults to `large-v3-turbo`. Do not drop to `small` to save time: on a real ad
 it produced ten errors a reviewer had to correct off the frames, the product
 name among them.
 
-`read` and `quick` take `--max-frames` as a ladder ceiling.
+`read` and `quick` take `--max-frames` as the automatic-sampling ceiling.
 
 `setup.py --check` is silent and returns an exit code only (0 ready, 2 required
 tooling missing, 3 optional missing). `setup.py --json` is the structured form.
@@ -374,8 +381,9 @@ Tests: `python3 -m pytest tests -q` (clips synthesised with ffmpeg, no network).
 
 ## Token models
 
-Frame count is derived from a token budget, so the budget is only meaningful if
-the cost model matches the host reading the frames. Providers do not agree:
+Frame count comes from the sampling plan, while `--max-tokens` is a warning
+tripwire. Its estimate is only meaningful if the cost model matches the host
+reading the frames. Providers do not agree:
 
 | Frame | anthropic | openai | gemini |
 |---|---|---|---|
@@ -393,13 +401,6 @@ revise tokenizers between versions; check your host's own counter if exact cost
 matters.
 
 ---
-
-## Credit
-
-A derivative of the MIT-licensed `watch` skill by Brad Bonanno
-(https://github.com/bradautomates/claude-video). The staged pipeline, the
-sampling ladders in the table above, the frame-dedup approach and the CLI shape
-all originate there. See LICENSE and CHANGELOG.md.
 
 ## Design notes
 

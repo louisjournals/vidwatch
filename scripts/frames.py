@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -10,68 +11,61 @@ from cache import RunCache
 from media import ffmpeg_bin, get_cuts, keyframe_times, probe_file
 from util import VidwatchError, fmt_ts, run, warn
 
-# Sampling rate, adopted from the upstream skill (MIT, Brad Bonanno) because it
-# is validated by ~1,846 real runs. Its own docstring is honest about the
-# tradeoff: "Auto-fps targets a frame budget, not a fixed rate" — so coverage
-# does thin as a video lengthens. What makes that acceptable is the escape
-# hatch: an explicit --fps bypasses the cap entirely, and a named --start/--end
-# window switches to a denser ladder, because narrowing the window IS the signal
-# that the user wants detail.
-MAX_FPS = 2.0
+# my-vidwatch adaptive sampling.
+#
+# The auto planner is intentionally continuous rather than a duration ladder.
+# It starts from a desired coverage interval that grows with sqrt(duration),
+# then tightens that interval for a named window. Short clips stay dense, long
+# clips thin gradually, and explicit --fps remains an exact uncapped override.
+# The frame ceiling is a safety cap for auto mode only.
 DEFAULT_MAX_FRAMES = 100
+WIDE_AUTO_RATE_LIMIT = 3.0
+FOCUS_AUTO_RATE_LIMIT = 4.0
+MIN_WIDE_FRAMES = 12
+MIN_FOCUS_FRAMES = 18
 
 
-def _clamp_fps(fps: float, duration: float, max_frames: int) -> tuple[float, int]:
-    fps = min(fps, MAX_FPS)
-    target = min(max_frames, max(1, int(round(fps * duration))))
-    return fps, target
+def _desired_interval(duration: float, *, focused: bool) -> float:
+    """Return the target seconds between samples before frame-count caps.
+
+    sqrt(duration) gives a smooth tradeoff: doubling video length does not
+    double the number of frames, but coverage also does not collapse at an
+    arbitrary threshold. A named window tightens the interval because the caller
+    has already identified the part that deserves closer inspection.
+    """
+    if duration <= 0:
+        return 1.0
+    wide = max(0.5, min(4.0, (duration ** 0.5) / 3.0))
+    return max(0.25, wide / 1.75) if focused else wide
 
 
-def auto_fps(duration: float, max_frames: int = DEFAULT_MAX_FRAMES) -> tuple[float, int]:
-    """Full-video scan: frame budget chosen by duration, fps derived from it."""
+def adaptive_sampling(
+    duration: float,
+    *,
+    focused: bool,
+    max_frames: int = DEFAULT_MAX_FRAMES,
+) -> tuple[float, int]:
+    """Plan an automatic sampling rate with smooth duration scaling."""
     if duration <= 0:
         return 1.0, 1
-    if duration <= 30:
-        target = min(max_frames, max(12, int(round(duration))))
-    elif duration <= 60:
-        target = min(max_frames, 40)
-    elif duration <= 180:
-        target = min(max_frames, 60)
-    elif duration <= 600:
-        target = min(max_frames, 80)
-    else:
-        target = max_frames
-    return _clamp_fps(target / duration, duration, max_frames)
+
+    interval = _desired_interval(duration, focused=focused)
+    minimum = MIN_FOCUS_FRAMES if focused else MIN_WIDE_FRAMES
+    ceiling_fps = FOCUS_AUTO_RATE_LIMIT if focused else WIDE_AUTO_RATE_LIMIT
+
+    wanted = max(minimum, math.ceil(duration / interval))
+    fps_limited = max(1, math.ceil(duration * ceiling_fps))
+    target = min(max_frames, wanted, fps_limited)
+    target = max(1, target)
+    return target / duration, target
 
 
-def auto_fps_focus(duration: float, max_frames: int = DEFAULT_MAX_FRAMES) -> tuple[float, int]:
-    """Named window: denser, because the caller is zooming in for detail."""
-    if duration <= 0:
-        return MAX_FPS, 2
-    if duration <= 5:
-        target = min(max_frames, max(10, int(round(duration * 6))))
-    elif duration <= 15:
-        target = min(max_frames, max(30, int(round(duration * 4))))
-    elif duration <= 30:
-        target = min(max_frames, 60)
-    elif duration <= 60:
-        target = min(max_frames, 80)
-    else:
-        target = max_frames
-    return _clamp_fps(target / duration, duration, max_frames)
-
-
-def explicit_fps(fps: float, duration: float) -> tuple[float, int]:
-    """Stated rate, honoured exactly. No frame cap, no MAX_FPS ceiling.
-
-    Deliberately uncapped: if the caller asks for a rate, silently widening the
-    interval to fit a budget is the failure this whole control model exists to
-    remove. Cost is surfaced by the caller's budget guard instead.
-    """
+def explicit_sampling(fps: float, duration: float) -> tuple[float, int]:
+    """Honour a user-stated rate exactly; auto caps do not apply."""
     return fps, max(1, int(round(fps * max(0.0, duration))))
 
 
-def rate_for(
+def sampling_plan(
     duration: float,
     *,
     focused: bool,
@@ -80,13 +74,10 @@ def rate_for(
 ) -> tuple[float, int, str]:
     """Resolve (fps, frame_target, strategy_label)."""
     if fps_override:
-        fps, target = explicit_fps(fps_override, duration)
+        fps, target = explicit_sampling(fps_override, duration)
         return fps, target, f"explicit {fps:g}fps"
-    if focused:
-        fps, target = auto_fps_focus(duration, max_frames)
-        return fps, target, "auto-focus"
-    fps, target = auto_fps(duration, max_frames)
-    return fps, target, "auto-full"
+    fps, target = adaptive_sampling(duration, focused=focused, max_frames=max_frames)
+    return fps, target, "adaptive-focus" if focused else "adaptive-wide"
 
 
 FONT_CANDIDATES = (

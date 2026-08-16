@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.0
+
+- Replaced the old bucketed sampling implementation with a new my-vidwatch
+  adaptive coverage curve. Sampling now scales continuously with window length,
+  focused windows tighten coverage, and explicit `--fps` remains exact.
+- Removed third-party attribution and the MIT LICENSE file after removing the
+  attributed sampling implementation. Current my-vidwatch code is maintained as
+  the project's own implementation.
+- Updated tests and documentation to describe the adaptive sampling model.
+
 ## 1.3.0
 
 Fixes from a two-agent external audit that failed 1.1.0.
@@ -24,16 +34,14 @@ Fixes from a two-agent external audit that failed 1.1.0.
   `embedded`.
 - **Sampling degraded silently with video length.** A fixed token budget was
   stretched across any duration, so a 10-minute video got the same frame count
-  as a 30-second one. Replaced with the upstream control model: duration ladder
-  for full scans, a denser ladder for named `--start/--end` windows, `--fps` as
-  an uncapped override, and `--max-tokens` demoted to a tripwire that warns
-  instead of thinning.
+  as a 30-second one. Replaced with duration-based frame control, denser named
+  `--start/--end` windows, exact `--fps`, and `--max-tokens` as a warning
+  tripwire instead of a density control.
 
 ### Other
 - Long-edge cap (1.2.0) applies to `max(width, height)`, not width — portrait
   frames no longer bypass the provider limit.
 - `quick` subcommand for clips under 3 minutes (1.2.0).
-- LICENSE and attribution to Brad Bonanno added.
 
 ### Known outstanding
 Audit items B1-B4, B6, B8-B11 remain. See the audit report.

@@ -57,13 +57,6 @@ Full command reference, measurements and rationale: [SKILL.md](SKILL.md).
 ## Tests
 
 ```bash
-python3 -m pytest tests -q     # 61 tests, clips synthesised with ffmpeg, no network
+python3 -m pytest tests -q     # 109 tests, clips synthesised with ffmpeg, no network
 ```
 
-## Credit
-
-A derivative of the MIT-licensed [`watch` skill by Brad
-Bonanno](https://github.com/bradautomates/claude-video). The staged pipeline,
-sampling ladders, dedup approach and CLI shape originate there.
-
-MIT. See LICENSE.

@@ -687,35 +687,38 @@ def test_pick_subtitle_skips_bitmap_tracks():
 # ---------------------------------------------- A5: rate control model
 
 def test_explicit_fps_holds_interval_across_durations():
-    """The core regression: a stated rate must not thin out on longer video."""
-    fps_a, n_a = framesmod.explicit_fps(1.0, 30.0)
-    fps_b, n_b = framesmod.explicit_fps(1.0, 300.0)
+    """A stated rate must not thin out on longer video."""
+    fps_a, n_a = framesmod.explicit_sampling(1.0, 30.0)
+    fps_b, n_b = framesmod.explicit_sampling(1.0, 300.0)
     assert fps_a == fps_b == 1.0
     assert n_a == 30 and n_b == 300, "explicit fps was capped"
     assert (30.0 / n_a) == pytest.approx(300.0 / n_b), "interval drifted"
 
 
-def test_auto_ladder_matches_upstream():
-    assert framesmod.auto_fps(120.0)[1] == 60       # 2 min -> every 2s
-    assert framesmod.auto_fps(45.0)[1] == 40
-    assert framesmod.auto_fps(1200.0)[1] == 100     # capped
-    assert framesmod.auto_fps(20.0)[1] == 20
+def test_adaptive_sampling_scales_smoothly_and_caps_long_video():
+    samples = [framesmod.adaptive_sampling(d, focused=False)[1]
+               for d in (20.0, 45.0, 120.0, 1200.0)]
+    assert samples == sorted(samples)
+    assert samples[-1] == framesmod.DEFAULT_MAX_FRAMES
+    assert 12 <= samples[0] < samples[1] < samples[2]
 
 
-def test_focus_ladder_is_denser_than_full():
-    _, full = framesmod.auto_fps(30.0)
-    _, focus = framesmod.auto_fps_focus(30.0)
-    assert focus > full, "named window is not denser"
-    assert framesmod.auto_fps_focus(15.0)[0] == pytest.approx(2.0)
+def test_focused_sampling_is_denser_than_wide_sampling():
+    _, wide = framesmod.adaptive_sampling(30.0, focused=False)
+    _, focus = framesmod.adaptive_sampling(30.0, focused=True)
+    assert focus > wide, "named window is not denser"
+    fps, _ = framesmod.adaptive_sampling(15.0, focused=True)
+    assert fps > 1.0
+    assert fps <= framesmod.FOCUS_AUTO_RATE_LIMIT
 
 
-def test_rate_for_labels_and_ceiling():
-    fps, _, label = framesmod.rate_for(60.0, focused=False)
-    assert label == "auto-full" and fps <= framesmod.MAX_FPS
-    _, _, label = framesmod.rate_for(20.0, focused=True)
-    assert label == "auto-focus"
-    fps, n, label = framesmod.rate_for(10.0, focused=False, fps_override=8.0)
-    assert fps == 8.0 and n == 80, "override must ignore MAX_FPS and the cap"
+def test_sampling_plan_labels_and_explicit_override():
+    fps, _, label = framesmod.sampling_plan(60.0, focused=False)
+    assert label == "adaptive-wide" and fps <= framesmod.WIDE_AUTO_RATE_LIMIT
+    _, _, label = framesmod.sampling_plan(20.0, focused=True)
+    assert label == "adaptive-focus"
+    fps, n, label = framesmod.sampling_plan(10.0, focused=False, fps_override=8.0)
+    assert fps == 8.0 and n == 80, "explicit override must ignore auto caps"
     assert "explicit" in label
 
 
@@ -1254,11 +1257,11 @@ def test_read_end_to_end_finds_every_state(slides_clip, workdir, monkeypatch):
     import json
     data = json.loads(rc.stdout)
     times = [f["t"] for f in data["frames"]]
-    # --start/--end names a window, so the FOCUS ladder applies:
-    # auto_fps_focus(15s) -> 2fps, 30 frames, versus 15 for a full scan.
-    assert data["rate"]["mode"] == "auto-focus", data["rate"]
-    assert data["rate"]["fps"] == pytest.approx(2.0)
-    assert data["dedup"]["candidates"] >= 25, data["dedup"]
+    # --start/--end names a focused window, so adaptive sampling tightens
+    # coverage compared with the same duration in wide mode.
+    assert data["rate"]["mode"] == "adaptive-focus", data["rate"]
+    assert data["rate"]["fps"] > 1.0
+    assert data["dedup"]["candidates"] >= 18, data["dedup"]
     assert 4 <= len(times) <= 8, f"expected the distinct states, got {times}"
     # One frame per visually distinct span. Tolerance is one frame interval
     # (0.1s at 10fps) because a reported timestamp is the requested seek
@@ -1271,9 +1274,9 @@ def test_read_end_to_end_finds_every_state(slides_clip, workdir, monkeypatch):
 
 
 def test_vendor_changes_cost_not_frame_count(slides_clip, workdir):
-    """After A5 the frame count comes from the duration ladder, so it must NOT
-    vary by vendor. What varies is the reported cost and whether the budget
-    guard trips — the budget is a tripwire now, not a density dial."""
+    """Frame count comes from adaptive sampling, so it must NOT vary by vendor.
+    What varies is the reported cost and whether the budget guard trips — the
+    budget is a tripwire, not a density dial."""
     import json
     seen = {}
     for vendor in ("anthropic", "gemini"):

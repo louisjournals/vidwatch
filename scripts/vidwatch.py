@@ -400,7 +400,7 @@ def cmd_read(args) -> int:
 
     width, est_h = resolve_frame_size(args.width, meta, model)
     focused = args.start is not None or args.end is not None
-    fps, cap, rate_label = framesmod.rate_for(
+    fps, cap, rate_label = framesmod.sampling_plan(
         window, focused=focused, fps_override=args.fps,
         max_frames=args.max_frames or framesmod.DEFAULT_MAX_FRAMES,
     )
@@ -552,7 +552,7 @@ def cmd_quick(args) -> int:
 
     start, end = 0.0, duration
     width, est_h = resolve_frame_size(args.width, meta, model)
-    fps, cap, rate_label = framesmod.rate_for(
+    fps, cap, rate_label = framesmod.sampling_plan(
         duration, focused=False, fps_override=args.fps,
         max_frames=args.max_frames or framesmod.DEFAULT_MAX_FRAMES,
     )
@@ -883,7 +883,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help=f"budget tripwire, warns rather than thinning "
                          f"(default {DEFAULT_READ_BUDGET})")
     rd.add_argument("--max-frames", type=int, default=None,
-                    help=f"ladder ceiling (default {framesmod.DEFAULT_MAX_FRAMES})")
+                    help=f"automatic sampling ceiling (default {framesmod.DEFAULT_MAX_FRAMES})")
     rd.add_argument("--mode", choices=("scene", "keyframe", "uniform"), default="scene")
     rd.add_argument("--timestamps", nargs="*", default=None,
                     help="always include these times (survive dedup)")
