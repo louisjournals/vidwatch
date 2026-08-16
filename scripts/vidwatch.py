@@ -327,7 +327,13 @@ def cmd_defects(args) -> int:
     scene_cuts = media.cluster_cuts(raw_scene_cuts)
     if scene_cuts:
         scene_cuts = dedupmod.confirm_transitions(path, scene_cuts)
-    trans = rc.read_json("transcript.json") or {"segments": []}
+    trans = rc.read_json("transcript.json")
+    if trans is None:
+        warn(
+            "no cached transcript: silence suppression did not run; silence "
+            "candidates may include normal pauses between transcript segments"
+        )
+        trans = {"segments": []}
     candidates = defectsmod.locate(
         path, meta,
         scene_cuts=scene_cuts,
@@ -609,6 +615,11 @@ def cmd_read(args) -> int:
             "burst": {"candidates": candidates, "fps": args.burst_fps,
                       "radius": args.burst_radius, "frames": len(burst)},
             "dedup": stats,
+            "frame_counts": {
+                "resolution_budget": len(times),
+                "extracted": len(got),
+                "after_dedup": len(kept),
+            },
             "frames": frame_records,
             "frame_size": [w, h],
             "resolution_mode": resolution_mode,

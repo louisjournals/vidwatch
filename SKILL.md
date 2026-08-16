@@ -439,6 +439,9 @@ reduced until the selected vendor's full frame set fits `--max-tokens`, stopping
 at **384px**. That 384px floor is **provisional**, not a measured legibility
 threshold. Explicit `--width` is a caller instruction and is honoured exactly;
 if it or the managed 384px floor is still over budget, warn and keep all frames.
+Resolution is sized against the full pre-dedup selection; frames dropped by dedup
+therefore do not retroactively buy higher resolution. `read --json` reports the
+resolution-budget, extracted, and after-dedup counts separately.
 
 TODO: measure the real resolution floor on 9:16 footage with burned-in captions.
 The nearby ~512px caption-legibility statement in the extract section was not

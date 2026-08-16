@@ -1701,6 +1701,54 @@ def test_defects_cli_json_records_are_stable_shape(black_flash_clip, workdir):
     assert any("black" in c["kind"].split("+") for c in data)
 
 
+def test_defects_cold_cache_warns_that_silence_suppression_did_not_run(
+    black_flash_clip, workdir
+):
+    import cache as cachemod
+    cache_root = workdir / "cache_defects_cold_warning"
+    env = {**os.environ, "VIDWATCH_CACHE": str(cache_root)}
+    cold = subprocess.run([
+        sys.executable, str(SCRIPTS / "vidwatch.py"), "defects", str(black_flash_clip),
+        "--json",
+    ], capture_output=True, text=True, check=False, env=env)
+    assert cold.returncode == 0, cold.stderr
+    assert "silence suppression did not run" in cold.stderr
+
+    old = os.environ.get("VIDWATCH_CACHE")
+    os.environ["VIDWATCH_CACHE"] = str(cache_root)
+    try:
+        rc_obj = cachemod.RunCache(str(black_flash_clip))
+        rc_obj.write_json("transcript.json", {
+            "source": "fixture", "segments": [{"start": 0.0, "end": 2.0, "text": "speech"}],
+        })
+    finally:
+        if old is None:
+            os.environ.pop("VIDWATCH_CACHE", None)
+        else:
+            os.environ["VIDWATCH_CACHE"] = old
+    warm = subprocess.run([
+        sys.executable, str(SCRIPTS / "vidwatch.py"), "defects", str(black_flash_clip),
+        "--json",
+    ], capture_output=True, text=True, check=False, env=env)
+    assert warm.returncode == 0, warm.stderr
+    assert "silence suppression did not run" not in warm.stderr
+
+
+def test_read_json_reports_resolution_and_post_dedup_counts(slides_clip, workdir):
+    import json
+    rc = subprocess.run([
+        sys.executable, str(SCRIPTS / "vidwatch.py"), "read", str(slides_clip),
+        "--start", "0", "--end", "15", "--mode", "uniform", "--max-frames", "20",
+        "--json",
+    ], capture_output=True, text=True, check=False,
+        env={**os.environ, "VIDWATCH_CACHE": str(workdir / "cache_read_counts")})
+    assert rc.returncode == 0, rc.stderr
+    data = json.loads(rc.stdout)
+    counts = data["frame_counts"]
+    assert counts["resolution_budget"] >= counts["extracted"] >= counts["after_dedup"]
+    assert counts["resolution_budget"] > counts["after_dedup"], counts
+
+
 def test_scan_custom_grid_respects_token_budget(workdir):
     import json
     clip = workdir / "scan_budget_8s.mp4"
