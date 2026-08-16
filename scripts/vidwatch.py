@@ -378,14 +378,12 @@ def cmd_scan(args) -> int:
     if args.tiles:
         n_tiles = args.tiles
     else:
-        per_sheet_cap = 25
-        # Cost is per sheet, not per tile, so solve for how many full sheets the
-        # budget affords and multiply by the tiles each sheet holds.
-        c0, r0 = framesmod.grid_for(per_sheet_cap)
-        # B6: an earlier version forced at least one sheet with max(1, ...),
-        # which quietly blew the budget - a portrait clip spent 4,025 tokens
-        # against a requested 3,000. The budget is a limit, so shrink the tiles
-        # until one sheet fits, and refuse rather than silently overspend.
+        per_sheet_cap = (cols * rows) if cols else 25
+        # Cost is per sheet, not per tile, so solve against the ACTUAL requested
+        # grid when one is supplied. An older regression forced at least one
+        # sheet even when it exceeded the budget; the budget is a hard limit, so
+        # shrink tiles until one sheet fits and refuse rather than overspend.
+        c0, r0 = (cols, rows) if cols else framesmod.grid_for(per_sheet_cap)
         def sheet_tokens(tw: int) -> int:
             th = max(1, round(tw * (meta.get("height") or 9) / (meta.get("width") or 16)))
             return max(1, model.tokens((tw + 4) * c0, (th + 4) * r0))
@@ -435,6 +433,11 @@ def cmd_scan(args) -> int:
         })
 
     total_tokens = sum(s["tokens"] for s in sheets)
+    if total_tokens > args.max_tokens:
+        raise VidwatchError(
+            f"assembled contact sheets cost ~{total_tokens:,} tokens, over the "
+            f"{args.max_tokens:,} budget; refusing to report an over-budget scan"
+        )
     interval = window / max(1, len(got))
 
     if args.json:

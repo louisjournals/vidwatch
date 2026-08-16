@@ -1633,6 +1633,26 @@ def test_defects_cli_json_records_are_stable_shape(black_flash_clip, workdir):
     assert any("black" in c["kind"].split("+") for c in data)
 
 
+def test_scan_custom_grid_respects_token_budget(workdir):
+    import json
+    clip = workdir / "scan_budget_8s.mp4"
+    if not clip.exists():
+        subprocess.run([
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", "testsrc2=s=640x360:r=10:d=8",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", str(clip),
+        ], check=True)
+    rc = subprocess.run([
+        sys.executable, str(SCRIPTS / "vidwatch.py"), "scan", str(clip),
+        "--grid", "10", "10", "--max-tokens", "3000", "--json",
+    ], capture_output=True, text=True, check=False,
+        env={**os.environ, "VIDWATCH_CACHE": str(workdir / "cache_scan_grid_budget")})
+    assert rc.returncode == 0, rc.stderr
+    data = json.loads(rc.stdout)
+    assert data["est_image_tokens"] <= 3000, data
+    assert all(s["cols"] == 10 and s["rows"] == 10 for s in data["sheets"])
+
+
 # ------------------------------------------------ Phase 6: burst evidence + Qwen
 
 def test_burst_sampling_adds_local_evidence_without_reducing_baseline(slides_clip, workdir):
