@@ -1569,19 +1569,54 @@ def test_structural_suppression_distinguishes_pause_from_dropout():
     assert suppressed[0]["suppression"] == "between-transcript-segments"
 
 
-def test_defect_prerequisites_surface_ffmpeg_failure(
-    black_flash_clip, silence_clip, workdir, monkeypatch
-):
-    bad_dir = workdir / "bad_ffmpeg"
+def _install_failing_tool(workdir, monkeypatch, name):
+    bad_dir = workdir / f"bad_{name}"
     bad_dir.mkdir(exist_ok=True)
-    bad = bad_dir / "ffmpeg"
-    bad.write_text("#!/bin/sh\necho synthetic-ffmpeg-failure >&2\nexit 7\n")
+    bad = bad_dir / name
+    bad.write_text("#!/bin/sh\necho synthetic-detector-failure >&2\nexit 7\n")
     bad.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bad_dir}:{os.environ.get('PATH', '')}")
-    with pytest.raises(util.VidwatchError):
-        defects.detect_duplicate_shots(black_flash_clip, 2.0)
-    with pytest.raises(util.VidwatchError):
-        media.detect_silence(silence_clip, noise_db=-35.0, min_duration=0.5)
+
+
+def _assert_loud_failure(call):
+    with pytest.raises(util.VidwatchError) as exc:
+        call()
+    assert "synthetic-detector-failure" in str(exc.value)
+    assert "exit 7" in str(exc.value)
+
+
+def test_ffmpeg_detectors_fail_loudly(black_flash_clip, silence_clip, workdir, monkeypatch):
+    _install_failing_tool(workdir, monkeypatch, "ffmpeg")
+    monkeypatch.setattr(media, "probe_file", lambda _: {"has_audio": True})
+    calls = [
+        lambda: media.detect_cuts(black_flash_clip),
+        lambda: media.detect_silence(silence_clip, noise_db=-35.0, min_duration=0.5),
+        lambda: dedup.content_changes(black_flash_clip, 2.0),
+        lambda: defects.detect_black(black_flash_clip),
+        lambda: defects.detect_freeze(black_flash_clip, 2.0),
+        lambda: defects.detect_luma_spikes(black_flash_clip),
+        lambda: defects.detect_duplicate_shots(black_flash_clip, 2.0),
+    ]
+    for call in calls:
+        _assert_loud_failure(call)
+
+
+def test_ffprobe_detectors_fail_loudly(black_flash_clip, workdir, monkeypatch):
+    _install_failing_tool(workdir, monkeypatch, "ffprobe")
+    _assert_loud_failure(lambda: media.keyframe_times(black_flash_clip))
+    _assert_loud_failure(lambda: defects.detect_pts_gaps(black_flash_clip))
+
+
+def test_read_empty_extraction_fails_with_vidwatcherror(slides_clip, workdir, monkeypatch):
+    import vidwatch
+    monkeypatch.setenv("VIDWATCH_CACHE", str(workdir / "cache_empty_read"))
+    monkeypatch.setattr(framesmod, "extract", lambda *a, **k: [])
+    args = vidwatch.build_parser().parse_args([
+        "read", str(slides_clip), "--start", "0", "--end", "2",
+        "--mode", "uniform", "--no-dedup",
+    ])
+    with pytest.raises(util.VidwatchError, match="no usable frames"):
+        args.func(args)
 
 
 def test_defects_cli_json_records_are_stable_shape(black_flash_clip, workdir):

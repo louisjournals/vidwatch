@@ -58,9 +58,7 @@ def detect_black(media_path: Path) -> list[dict]:
         media.ffmpeg_bin(), "-hide_banner", "-nostats", "-i", str(media_path),
         "-vf", f"blackdetect=d={BLACK_MIN_SECONDS}:pix_th={BLACK_PIXEL_THRESHOLD}",
         "-an", "-sn", "-f", "null", "-",
-    ], check=False, timeout=3600)
-    if proc.returncode != 0:
-        raise VidwatchError("blackdetect failed; refusing to report 'no black frames'")
+    ], timeout=3600)
     out = []
     for m in _BLACK_RE.finditer(proc.stderr or b""):
         st, en, dur = map(float, m.groups())
@@ -77,9 +75,7 @@ def detect_freeze(media_path: Path, duration: float) -> list[dict]:
         media.ffmpeg_bin(), "-hide_banner", "-nostats", "-i", str(media_path),
         "-vf", f"freezedetect=n={FREEZE_NOISE_DB}dB:d={FREEZE_MIN_SECONDS}",
         "-an", "-sn", "-f", "null", "-",
-    ], check=False, timeout=3600)
-    if proc.returncode != 0:
-        raise VidwatchError("freezedetect failed; refusing to report 'no freezes'")
+    ], timeout=3600)
     err = proc.stderr or b""
     starts = [float(m.group(1)) for m in _FREEZE_START_RE.finditer(err)]
     endings = [(float(m.group(1)), float(m.group(2))) for m in _FREEZE_END_RE.finditer(err)]
@@ -120,9 +116,7 @@ def _luma_series(media_path: Path) -> list[tuple[float, float]]:
     proc = run([
         media.ffmpeg_bin(), "-hide_banner", "-loglevel", "error", "-i", str(media_path),
         "-vf", "signalstats,metadata=print:file=-", "-an", "-sn", "-f", "null", "-",
-    ], check=False, timeout=3600)
-    if proc.returncode != 0:
-        raise VidwatchError("signalstats failed; refusing to report 'no luma spikes'")
+    ], timeout=3600)
     rows: list[tuple[float, float]] = []
     current_t: float | None = None
     for line in (proc.stdout or b"").decode("utf-8", "replace").splitlines():
@@ -172,9 +166,7 @@ def _packet_timestamps(media_path: Path) -> list[float]:
     proc = run([
         media.ffprobe_bin(), "-v", "error", "-select_streams", "v:0",
         "-show_entries", "packet=pts_time", "-of", "json", str(media_path),
-    ], check=False, timeout=1800)
-    if proc.returncode != 0:
-        raise VidwatchError("ffprobe PTS scan failed; refusing to report 'no PTS gaps'")
+    ], timeout=1800)
     try:
         data = json.loads((proc.stdout or b"{}").decode("utf-8", "replace"))
     except json.JSONDecodeError as exc:
@@ -212,9 +204,7 @@ def _grab_thumb(media_path: Path, ts: float) -> bytes | None:
         "-ss", f"{max(0.0, ts):.3f}", "-i", str(media_path), "-frames:v", "1",
         "-vf", f"scale={dedup.THUMB}:{dedup.THUMB},format=gray",
         "-f", "rawvideo", "-",
-    ], check=False, timeout=120)
-    if proc.returncode != 0:
-        return None
+    ], timeout=120)
     raw = proc.stdout or b""
     return raw[:dedup.FRAME_BYTES] if len(raw) >= dedup.FRAME_BYTES else None
 

@@ -579,6 +579,8 @@ def cmd_read(args) -> int:
 
     keep_set = set(kept_paths)
     kept = [(t, p) for t, p in got if p in keep_set]
+    if not kept:
+        raise VidwatchError("read extracted no usable frames; cannot continue")
 
     w, h = framesmod.frame_dims(kept[0][1])
     per_frame = model.tokens(w, h)

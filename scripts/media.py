@@ -326,7 +326,7 @@ def keyframe_times(media: Path, start: float = 0.0, end: float | None = None) ->
     if start:
         cmd += ["-read_intervals", f"{start}%{end}" if end else f"{start}%"]
     cmd += [str(media)]
-    proc = run(cmd, check=False, timeout=1800)
+    proc = run(cmd, timeout=1800)
     times = []
     for line in (proc.stdout or b"").decode("utf-8", "replace").splitlines():
         line = line.strip().rstrip(",")
