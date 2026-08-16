@@ -6,6 +6,7 @@ must survive deduplication, because that is usually the change you cared about.
 """
 from __future__ import annotations
 
+import math
 import os
 import subprocess
 import sys
@@ -695,21 +696,42 @@ def test_explicit_fps_holds_interval_across_durations():
     assert (30.0 / n_a) == pytest.approx(300.0 / n_b), "interval drifted"
 
 
-def test_adaptive_sampling_scales_smoothly_and_caps_long_video():
-    samples = [framesmod.adaptive_sampling(d, focused=False)[1]
-               for d in (20.0, 45.0, 120.0, 1200.0)]
-    assert samples == sorted(samples)
-    assert samples[-1] == framesmod.DEFAULT_MAX_FRAMES
-    assert 12 <= samples[0] < samples[1] < samples[2]
+def test_adaptive_sampling_preserves_pre14_anchor_minimums():
+    """The continuous curve may exceed old coverage, but never undercut it."""
+    wide_minimums = {15.0: 15, 30.0: 30, 45.0: 40, 60.0: 40,
+                     120.0: 60, 180.0: 60}
+    focus_minimums = {15.0: 30, 30.0: 60, 45.0: 80, 60.0: 80,
+                      120.0: 100, 180.0: 100}
+    for duration, minimum in wide_minimums.items():
+        assert framesmod.adaptive_sampling(duration, focused=False)[1] >= minimum
+    for duration, minimum in focus_minimums.items():
+        assert framesmod.adaptive_sampling(duration, focused=True)[1] >= minimum
+
+    # Boundary-adjacent samples catch the old bucket jumps without reintroducing
+    # bucketed production logic. The new curve must already be above the next
+    # old plateau before crossing each boundary.
+    for duration, minimum in ((30.001, 40), (60.001, 60), (180.001, 80)):
+        assert framesmod.adaptive_sampling(duration, focused=False)[1] >= minimum
+    assert framesmod.adaptive_sampling(60.001, focused=True)[1] >= 100
+
+    # Keep 1.4's sqrt-curve coverage above three minutes whenever it is denser.
+    for duration in (181.0, 240.0, 300.0, 450.0, 600.0, 900.0):
+        interval = max(0.5, min(4.0, duration ** 0.5 / 3.0))
+        v14_wide = min(framesmod.DEFAULT_MAX_FRAMES, math.ceil(duration / interval))
+        v14_focus = min(
+            framesmod.DEFAULT_MAX_FRAMES,
+            math.ceil(duration / max(0.25, interval / 1.75)),
+        )
+        assert framesmod.adaptive_sampling(duration, focused=False)[1] >= v14_wide
+        assert framesmod.adaptive_sampling(duration, focused=True)[1] >= v14_focus
 
 
-def test_focused_sampling_is_denser_than_wide_sampling():
-    _, wide = framesmod.adaptive_sampling(30.0, focused=False)
-    _, focus = framesmod.adaptive_sampling(30.0, focused=True)
-    assert focus > wide, "named window is not denser"
-    fps, _ = framesmod.adaptive_sampling(15.0, focused=True)
-    assert fps > 1.0
-    assert fps <= framesmod.FOCUS_AUTO_RATE_LIMIT
+def test_ten_minute_window_never_collapses_to_thirty_second_count():
+    """Regression for the 1.3 blocker: long windows must receive more samples."""
+    for focused in (False, True):
+        short = framesmod.adaptive_sampling(30.0, focused=focused)[1]
+        long = framesmod.adaptive_sampling(600.0, focused=focused)[1]
+        assert long > short, (focused, short, long)
 
 
 def test_sampling_plan_labels_and_explicit_override():

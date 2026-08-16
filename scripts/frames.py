@@ -13,30 +13,58 @@ from util import VidwatchError, fmt_ts, run, warn
 
 # my-vidwatch adaptive sampling.
 #
-# The auto planner is intentionally continuous rather than a duration ladder.
-# It starts from a desired coverage interval that grows with sqrt(duration),
-# then tightens that interval for a named window. Short clips stay dense, long
-# clips thin gradually, and explicit --fps remains an exact uncapped override.
-# The frame ceiling is a safety cap for auto mode only.
+# The planner stays continuous: there are no duration buckets that suddenly
+# drop density at a boundary. Two independent curves contribute a target:
+#   1. the 1.4 sqrt(duration) curve, retained so longer-video coverage never
+#      regresses from 1.4; and
+#   2. a continuous coverage floor fitted above the pre-1.4 behaviour, so the
+#      15s-3min range does not lose the dense coverage it used to have.
+# The higher target wins. Explicit --fps remains an exact uncapped override.
 DEFAULT_MAX_FRAMES = 100
 WIDE_AUTO_RATE_LIMIT = 3.0
 FOCUS_AUTO_RATE_LIMIT = 4.0
 MIN_WIDE_FRAMES = 12
 MIN_FOCUS_FRAMES = 18
 
+# Piecewise-linear lower envelopes. These are deliberately *not* sampling
+# buckets: interpolation makes the underlying target continuous at every point.
+# The knots are chosen so the curve is never below the pre-1.4 default coverage,
+# including immediately after the old step boundaries.
+_WIDE_FLOOR_POINTS = (
+    (0.0, 0.0),
+    (6.0, 12.0),
+    (12.0, 12.0),
+    (30.0, 40.0),
+    (60.0, 60.0),
+    (180.0, 80.0),
+    (600.0, 100.0),
+)
+_FOCUS_FLOOR_POINTS = (
+    (0.0, 0.0),
+    (30.0, 60.0),
+    (40.0, 80.0),
+    (60.0, 100.0),
+)
 
-def _desired_interval(duration: float, *, focused: bool) -> float:
-    """Return the target seconds between samples before frame-count caps.
 
-    sqrt(duration) gives a smooth tradeoff: doubling video length does not
-    double the number of frames, but coverage also does not collapse at an
-    arbitrary threshold. A named window tightens the interval because the caller
-    has already identified the part that deserves closer inspection.
-    """
+def _desired_interval_v14(duration: float, *, focused: bool) -> float:
+    """The 1.4 continuous interval curve, retained as a lower bound."""
     if duration <= 0:
         return 1.0
     wide = max(0.5, min(4.0, (duration ** 0.5) / 3.0))
     return max(0.25, wide / 1.75) if focused else wide
+
+
+def _interpolated_floor(duration: float, *, focused: bool) -> float:
+    """Continuous frame-count floor for automatic sampling."""
+    points = _FOCUS_FLOOR_POINTS if focused else _WIDE_FLOOR_POINTS
+    if duration <= points[0][0]:
+        return points[0][1]
+    for (x0, y0), (x1, y1) in zip(points, points[1:]):
+        if duration <= x1:
+            ratio = (duration - x0) / (x1 - x0)
+            return y0 + ratio * (y1 - y0)
+    return points[-1][1]
 
 
 def adaptive_sampling(
@@ -45,15 +73,17 @@ def adaptive_sampling(
     focused: bool,
     max_frames: int = DEFAULT_MAX_FRAMES,
 ) -> tuple[float, int]:
-    """Plan an automatic sampling rate with smooth duration scaling."""
+    """Plan an automatic sampling rate with continuous duration scaling."""
     if duration <= 0:
         return 1.0, 1
 
-    interval = _desired_interval(duration, focused=focused)
+    interval = _desired_interval_v14(duration, focused=focused)
     minimum = MIN_FOCUS_FRAMES if focused else MIN_WIDE_FRAMES
     ceiling_fps = FOCUS_AUTO_RATE_LIMIT if focused else WIDE_AUTO_RATE_LIMIT
 
-    wanted = max(minimum, math.ceil(duration / interval))
+    v14_target = math.ceil(duration / interval)
+    coverage_floor = math.ceil(_interpolated_floor(duration, focused=focused))
+    wanted = max(minimum, v14_target, coverage_floor)
     fps_limited = max(1, math.ceil(duration * ceiling_fps))
     target = min(max_frames, wanted, fps_limited)
     target = max(1, target)
