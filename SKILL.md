@@ -23,7 +23,7 @@ license: MIT
 work" — starts with `extract`. There is no other analysis command.**
 
 ```bash
-python3 SCRIPTS/vidwatch.py extract "<url-or-path>" --whisper-model medium
+python3 SCRIPTS/vidwatch.py extract "<url-or-path>"
 ```
 
 Produces a handoff folder — `brief.md` plus a few contact sheets — for cases
@@ -89,21 +89,19 @@ no length limit.
   where the owner already looks for files to forward. A session or working
   directory is the wrong place: they cannot find it, and the whole point of this
   stage is that the files get handed onward within seconds.
-- **Do NOT pass `--whisper-model`.** The default is already `large-v3-turbo`.
-  Naming a smaller model to save time produced ten transcription errors on a
-  real ad, the product name among them.
-- **Do NOT pass `--frames` or `--grid`.** For `extract`, the defaults use 12
-  evenly spaced moments and pick a grid that keeps tiles legible for the clip's
-  aspect ratio. `quick` and `read` use the adaptive sampling policy documented
-  below; do not describe those modes as using the 12-frame `extract` default.
+- **Do NOT pass `--whisper-model` unless the owner is intentionally overriding
+  transcription quality/cost.** Leave the CLI default unchanged for normal runs.
+- **Do NOT pass `--frames` or `--grid`.** For `extract`, the default derives the
+  evidence count from duration (about one moment per second, minimum 12, maximum
+  120) and picks a grid that keeps tiles legible for the clip's aspect ratio.
+  `quick` and `read` use the separate adaptive sampling policy documented below.
 
 Override only when the owner asks for something specific.
 
-Defaults: 12 evenly spaced moments packed into 2x2 sheets, 540px per tile, three
-files. Chat interfaces handle many attachments badly, and a 3x3 grid would
-shrink each tile below the ~512px where burned-in captions stop being legible.
-Adjust with `--frames`, `--grid COLS ROWS`, or `--layout frames` for one file per
-moment.
+By default those evenly spaced moments are packed into aspect-ratio-aware sheets
+at 540px per tile. Chat interfaces handle many attachments badly, so the layout
+keeps each tile useful while limiting upload count. Adjust with `--frames`,
+`--grid COLS ROWS`, or `--layout frames` for one file per moment.
 
 **Short clip (under ~3 minutes)? Use `quick` and stop reading.** One pass,
 transcript plus dense frames. Staging exists to stop a long video eating the
@@ -134,20 +132,20 @@ command and open a JPEG can drive this — no host-specific tooling required.
 
 1. **Under ~3 minutes, use `quick`.** It refuses anything longer and points you
    at the staged path, so you cannot get this wrong by accident.
-7. **Never skip `probe` on a long video.** Reading frames first spends the budget
+2. **Never skip `probe` on a long video.** Reading frames first spends the budget
    before you know where the answer is.
-2. **Never `read` a window wider than 10 minutes.** The tool refuses by design.
+3. **Never `read` a window wider than 10 minutes.** The tool refuses by design.
    `scan` first, then read the window that matters. `--force` overrides it, but
    the result is a sampling interval too coarse to be worth the tokens.
-3. **Frames are samples, not the video.** If the reported interval is over ~2s,
+4. **Frames are samples, not the video.** If the reported interval is over ~2s,
    never say something is absent from the video — only that it is absent from
    the frames you saw. `read` prints the interval; quote it when it matters.
-4. **Stop when the transcript is enough.** Summaries, quotes and "what did they
+5. **Stop when the transcript is enough.** Summaries, quotes and "what did they
    say about X" almost never need frames. Reading 100 images to answer a question
    the captions already answered is the most common way to waste a budget here.
-5. **Set the token model once.** Export `VIDWATCH_VENDOR` to match the host, or
+6. **Set the token model once.** Export `VIDWATCH_VENDOR` to match the host, or
    pass `--vendor`. Without it the budget uses conservative worst-case costs.
-6. **Do not clean up.** Media stays cached on purpose so follow-ups are instant.
+7. **Do not clean up.** Media stays cached on purpose so follow-ups are instant.
    Use `cache --purge` only when asked.
 
 ---
@@ -183,7 +181,23 @@ Read the motion profile before deciding anything:
 
 Flags: `--no-cuts` (skip the motion profile, and for URLs skip the video download
 entirely — captions only), `--no-whisper` (never transcribe locally),
-`--whisper-model tiny|base|small|medium|large-v3`, `--language en|zh|auto`.
+`--whisper-model tiny|base|small|medium|large-v3|large-v3-turbo`,
+`--language en|zh|auto`.
+
+## defects — deterministic locator
+
+Run before `read` when the task is to find editing/technical defects:
+
+```bash
+python3 SCRIPTS/vidwatch.py defects "<url-or-path>"
+```
+
+Uses local ffmpeg/ffprobe only — zero image tokens, no model call. It reports
+candidate timestamps for black flashes, freezes, actual audio silence, abrupt
+luma changes, PTS gaps and repeated non-adjacent shots. Human output prints a
+ready `read --start ... --end ... --candidates T` command; `--json` returns
+`{t, kind, severity, evidence}` records. Detection finds the candidate; `read`
+burst sampling collects visual evidence around it.
 
 ## Stage 2 — scan
 
@@ -216,7 +230,9 @@ capability the host provides.
 | `--fps N` | Force a sampling rate. Bypasses the frame cap entirely — a stated rate is honoured on a 30-second clip and a 30-minute one alike. You own the cost. |
 | `--max-tokens N` | Budget **tripwire**, default 20000. Warns and reports the affordable window; never silently widens the interval. |
 | `--max-frames N` | Automatic-sampling frame ceiling, default 100. |
-| `--timestamps 1:02 1:14` | Force these moments in; they survive dedup. Read the transcript first, then target the moments the speaker flags ("as you can see here"). |
+| `--timestamps 1:02 1:14` | Force these exact moments in outside the automatic frame ceiling; they survive dedup. |
+| `--candidates 1:02 1:14` | Known defect/event timestamps. Adds protected local burst samples without reducing baseline coverage elsewhere. |
+| `--burst-fps N` / `--burst-radius S` | Evidence density around candidates; defaults to 10fps within ±0.5s. Detection still belongs to `defects`. |
 | `--mode scene\|keyframe\|uniform` | Default `scene`. `keyframe` is fastest. `uniform` gives even coverage regardless of content. |
 | `--no-dedup` | Keep visually near-identical frames. Use when you are hunting a tiny on-screen change and would rather pay than miss it. |
 | `--dedup-threshold N` | Default 2.0. Lower keeps more. Raise on very grainy footage. |
@@ -238,10 +254,11 @@ Typical defaults with `--max-frames 100`:
 | Window | Wide / whole clip | Named window |
 |---|---|---|
 | 5s | 12 frames | 18 frames |
-| 15s | 12 | 21 |
-| 30s | 17 | 29 |
-| 1 min | 24 | 41 |
-| 2 min | 33 | 58 |
+| 15s | 17 | 30 |
+| 30s | 40 | 60 |
+| 1 min | 60 | 100 |
+| 2 min | 70 | 100 |
+| 3 min | 80 | 100 |
 | 10 min | 100 | 100 |
 | 30 min | 100 | 100 |
 
@@ -256,10 +273,10 @@ check the printed estimate on 9:16 footage.
 
 ## Flags that exist on every stage
 
-`--json` on `probe`, `scan`, `read`, `quick` and `extract` gives machine-readable
-output with the same numbers. `--vendor` takes
-`generic|anthropic|anthropic:hires|openai:4o|openai:5|openai:5-high|gemini`; the
-aliases `claude`, `gpt` and `google` also work.
+`--json` on `probe`, `defects`, `scan`, `read`, `quick` and `extract` gives
+machine-readable output. `--vendor` on budgeted frame-reading stages takes
+`generic|anthropic|anthropic:hires|openai:4o|openai:5|openai:5-high|gemini|qwen|qwen:video`;
+the aliases `claude`, `gpt`, `google` and `qwen3-vl` also work.
 
 `scan` additionally takes `--start`/`--end`, `--tiles`, `--tile-width`,
 `--grid COLS ROWS`, and its own `--mode`. It caps internally at 200 tiles. If one
@@ -367,9 +384,9 @@ brew install ffmpeg yt-dlp whisper-cpp                 # macOS
 sudo apt install ffmpeg && pipx install yt-dlp         # Debian/Ubuntu
 ```
 
-The whisper model (`small`, 466 MB, multilingual) downloads on first use into the
-cache. `setup.py` reports what is missing and the exact install command; it never
-installs anything itself.
+The selected whisper.cpp model downloads on first use into the cache. `setup.py`
+reports what is missing and the exact install command; it never installs anything
+itself.
 
 Slash command: `/my-vidwatch <video-url-or-path> [question]` (via
 `commands/my-vidwatch.md`). The skill is also model-invoked from its description
@@ -389,10 +406,10 @@ still exceeds budget, the tool warns and proceeds at full frame count. The
 estimate is only meaningful if the cost model matches the host reading the
 frames. Providers do not agree:
 
-| Frame | anthropic | openai | gemini |
+| Frame | anthropic | openai:4o | gemini |
 |---|---|---|---|
-| 512x288 | 197 | 255 | 258 |
-| 1024x576 | 786 | 765 | 516 |
+| 512x288 | 209 | 255 | 258 |
+| 1024x576 | 777 | 765 | 516 |
 
 Selection order is `--vendor`, then `$VIDWATCH_VENDOR`, then `generic`. The
 generic model takes the highest estimate at every size, so an unconfigured host
@@ -408,8 +425,8 @@ matters.
 
 ## Design notes
 
-Kept here so the choices are auditable rather than folklore. Every number below
-was measured on this code, not assumed.
+Kept here so the choices are auditable rather than folklore. Numbers are measured
+on this code unless a section explicitly marks them provisional or derived.
 
 **Staging over a single pass.** A one-shot "extract N frames across the whole
 video" pipeline spends its budget before it knows where the answer is. On a
@@ -514,9 +531,9 @@ Downscaling before the scene filter does not help: 15.6s versus 12.7s on the sam
 clip with byte-identical results, because the scale filter costs more than it
 saves.
 
-**Local transcription only.** whisper.cpp on the machine, `small` multilingual by
-default. No API keys, no audio egress. Slower than a hosted endpoint; that is the
-trade.
+**Local transcription only.** whisper.cpp or openai-whisper runs on the machine;
+normal runs use the CLI model default documented above. No API keys, no audio
+egress. Slower than a hosted endpoint; that is the trade.
 
 **One ffmpeg landmine, commented at the call site.** Concatenated JPEGs read from
 a pipe need `-c:v mjpeg` stated explicitly, or the probe fails on the

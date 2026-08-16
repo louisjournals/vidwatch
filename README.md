@@ -16,22 +16,26 @@ python3 scripts/setup.py          # what's missing, and how to install it
 ## How it works
 
 Nothing "watches" a video. Video becomes frames plus an audio track, and frames
-cost image tokens — so the only real question is *which* frames. This tool
-answers that in three stages, cheapest first:
+cost image tokens — so the real question is *which* evidence to extract.
 
-| Stage | Cost | Purpose |
+| Command | Cost | Purpose |
 |---|---|---|
+| `extract` | local preprocessing | Primary handoff command: builds `brief.md` plus timestamped sheets/frames for another model or person to review. |
 | `quick` | one call | Short clips (under ~3 min): transcript + dense frames in a single pass. Refuses longer clips. |
-| `probe` | 0 image tokens | Duration, transcript, and a motion profile (cuts/min). Usually answers the question or narrows it to a 30-second window. |
-| `scan` | ~1-3k tokens | Contact sheets of the whole video with timestamps burned in. For *locating*, not reading. |
-| `read` | ~5-20k tokens | Dense full-resolution frames on one bounded window. Refuses windows over 10 minutes. |
+| `probe` | 0 image tokens | Duration, transcript, and motion profile. Usually answers the question or narrows the window. |
+| `defects` | 0 image tokens | Deterministic black/freeze/silence/luma/PTS/duplicate-shot locator before visual reading. |
+| `scan` | ~1-3k tokens | Contact sheets for locating a moment across a longer video. |
+| `read` | ~5-20k tokens | Dense evidence frames on one bounded window, with optional local burst sampling around candidate timestamps. |
 
-The transcript does the searching. Frames do the seeing.
+The transcript does the searching. Deterministic detectors locate defects. Frames
+do the seeing.
 
 ```bash
-python3 scripts/vidwatch.py quick  ~/Movies/clip.mp4          # short clip, one pass
-python3 scripts/vidwatch.py probe "https://youtu.be/..."
-python3 scripts/vidwatch.py read  "https://youtu.be/..." --start 9:35 --end 9:55 --width 1024
+python3 scripts/vidwatch.py extract ~/Movies/clip.mp4 --goal "review the edit"
+python3 scripts/vidwatch.py quick   ~/Movies/clip.mp4
+python3 scripts/vidwatch.py probe  "https://youtu.be/..."
+python3 scripts/vidwatch.py defects ~/Movies/clip.mp4
+python3 scripts/vidwatch.py read   ~/Movies/clip.mp4 --start 9:35 --end 9:55 --width 1024
 ```
 
 Downloads, transcripts and scene cuts are cached under `~/.cache/my-vidwatch/`,
@@ -45,10 +49,12 @@ so a follow-up question on the same video costs nothing to set up.
   two-digit caption change scores 0.02 on a whole-frame mean and 4.27 tile-wise.
 - **Honest coverage.** Every read prints its sampling interval and states plainly
   what could have fallen between frames.
-- **Per-host token models.** `--vendor anthropic|openai|gemini` — the same frame
-  costs 786, 765 or 516 tokens depending on who is reading it, so a shared
-  formula would misprice two hosts out of three.
-- **Local transcription.** whisper.cpp on your machine. No keys, no audio egress.
+- **Per-host token models.** `--vendor` supports Anthropic, OpenAI, Gemini and
+  provisional Qwen image/video-sequence models. The generic model always uses
+  the highest estimate, while an omitted `--width` can spend resolution down to
+  the 384px floor without ever reducing frame count.
+- **Local transcription.** whisper.cpp or openai-whisper on your machine. No keys,
+  no audio egress.
 - **Windowed, cached scene detection.** Detection costs a full decode, so it runs
   only on the range being read and the result persists.
 
@@ -57,7 +63,7 @@ Full command reference, measurements and rationale: [SKILL.md](SKILL.md).
 ## Tests
 
 ```bash
-python3 -m pytest tests -q     # 109 tests, clips synthesised with ffmpeg, no network
+python3 -m pytest tests -q     # 123 tests, clips synthesised with ffmpeg, no network
 ```
 
 ## Licence

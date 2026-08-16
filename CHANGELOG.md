@@ -2,8 +2,34 @@
 
 ## 2.0.0
 
-- Restored an explicit MIT licence for the project, owned by `louisjournals`.
-- Standardised the current release version on 2.0.0 across skill metadata and changelog.
+- Restored the project MIT licence (`Copyright (c) 2026 louisjournals`) and
+  standardised release metadata on 2.0.0.
+- Re-fitted the continuous adaptive sampling curve so every anchor through three
+  minutes meets or exceeds the pre-1.4.0 coverage, while retaining the stronger
+  1.4.0 values on longer windows. Restored the 10-minute-vs-30-second regression.
+- Added `AUDIT_2026-08-16.md`, a fresh independently numbered audit. The old
+  external B-numbered report was never recovered, so its missing definitions are
+  explicitly historical rather than guessed.
+- Added a joint frame × resolution budget for `read`/`quick`: automatic width can
+  fall from 512px to a provisional 384px floor, but frame count never falls for
+  budget reasons. Explicit `--width` is honoured exactly and over-budget runs warn
+  rather than silently downscale or thin.
+- Added the zero-image-token `defects` locator for black flashes, freezes, audio
+  silence, luma edges, PTS gaps and duplicate shots, reusing the existing
+  content-change/transition confirmation and tile-wise comparison paths.
+- Added `read --candidates` burst evidence collection. Candidate and explicit
+  timestamps sit outside the automatic frame ceiling and survive dedup; JSON frame
+  records now include `scene_id`, adjacent `change_score`, and nearest transcript
+  line.
+- Added provisional `qwen` and `qwen:video` token models using the owner-selected
+  /28 compatibility assumption. `qwen` assumes a 256-token host-side image floor;
+  `qwen:video` applies 2x temporal grouping and is opt-in because irregularly
+  sampled JPEGs can carry false timing if a host turns them into a uniform video
+  sequence. Qwen figures remain derived pending API-reported usage calibration.
+- Reconciled documentation: `extract` is the primary handoff command, Whisper's
+  default is stated once and matches `tx.DEFAULT_MODEL`, Rules are numbered in
+  order, the sampling table matches the current planner, and README command/test
+  counts match the implemented CLI.
 
 ## 1.4.0
 
