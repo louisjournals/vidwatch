@@ -315,8 +315,8 @@ def merge_candidates(candidates: list[dict], *, window: float = MERGE_WINDOW_SEC
     return merged
 
 
-def locate(media_path: Path, meta: dict) -> list[dict]:
-    """Run every deterministic detector and return merged event candidates."""
+def detect_all(media_path: Path, meta: dict) -> list[dict]:
+    """Run every deterministic detector without structural suppression or merging."""
     duration = float(meta.get("duration") or 0.0)
     candidates = []
     candidates.extend(detect_black(media_path))
@@ -325,4 +325,77 @@ def locate(media_path: Path, meta: dict) -> list[dict]:
     candidates.extend(detect_luma_spikes(media_path))
     candidates.extend(detect_pts_gaps(media_path))
     candidates.extend(detect_duplicate_shots(media_path, duration))
-    return merge_candidates(candidates)
+    return sorted(candidates, key=lambda c: (c["t"], c["kind"]))
+
+
+def _silence_is_between_segments(hit: dict, segments: list[dict]) -> bool:
+    """True only when the whole silence span sits in an internal transcript gap."""
+    evidence = hit.get("evidence") or {}
+    try:
+        st = float(evidence["start"])
+        en = float(evidence["end"])
+    except (KeyError, TypeError, ValueError):
+        return False
+
+    ordered = sorted(
+        (
+            (float(seg.get("start", 0.0)), float(seg.get("end", seg.get("start", 0.0))))
+            for seg in segments
+        ),
+        key=lambda pair: pair[0],
+    )
+    for left, right in zip(ordered, ordered[1:]):
+        left_end = left[1]
+        right_start = right[0]
+        if left_end <= st and en <= right_start:
+            return True
+    return False
+
+
+def suppress_structural(
+    candidates: list[dict],
+    *,
+    scene_cuts: list[float] | None = None,
+    transcript_segments: list[dict] | None = None,
+) -> tuple[list[dict], list[dict]]:
+    """Suppress detector hits already explained by known edit/speech structure.
+
+    This is deliberately separate from detector thresholds. Luma changes that
+    coincide with confirmed cuts are expected edit structure. Silence is only
+    considered a normal pause when its entire span sits between two transcript
+    segments; any overlap with speech remains a dropout candidate.
+    """
+    cuts = scene_cuts or []
+    segments = transcript_segments or []
+    kept: list[dict] = []
+    suppressed: list[dict] = []
+    for hit in candidates:
+        kind = str(hit.get("kind", ""))
+        reason = None
+        if kind == "luma-spike" and any(
+            abs(float(hit["t"]) - float(cut)) <= MERGE_WINDOW_SECONDS for cut in cuts
+        ):
+            reason = "confirmed-scene-cut"
+        elif kind == "silence" and segments and _silence_is_between_segments(hit, segments):
+            reason = "between-transcript-segments"
+
+        if reason is None:
+            kept.append(hit)
+        else:
+            suppressed.append({**hit, "suppression": reason})
+    return kept, suppressed
+
+
+def locate(
+    media_path: Path,
+    meta: dict,
+    *,
+    scene_cuts: list[float] | None = None,
+    transcript_segments: list[dict] | None = None,
+) -> list[dict]:
+    """Run detectors, suppress explained structure, then merge event candidates."""
+    raw = detect_all(media_path, meta)
+    kept, _ = suppress_structural(
+        raw, scene_cuts=scene_cuts, transcript_segments=transcript_segments,
+    )
+    return merge_candidates(kept)

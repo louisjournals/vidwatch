@@ -1541,6 +1541,34 @@ def test_defects_clean_footage_returns_zero_candidates(clean_defect_clip):
     assert defects.locate(clean_defect_clip, meta) == []
 
 
+def test_structural_suppression_removes_luma_at_confirmed_cut_only():
+    hits = [
+        {"t": 5.0, "kind": "luma-spike", "severity": "high", "evidence": {}},
+        {"t": 8.0, "kind": "luma-spike", "severity": "high", "evidence": {}},
+    ]
+    kept, suppressed = defects.suppress_structural(hits, scene_cuts=[5.1])
+    assert [h["t"] for h in kept] == [8.0]
+    assert len(suppressed) == 1
+    assert suppressed[0]["suppression"] == "confirmed-scene-cut"
+
+
+def test_structural_suppression_distinguishes_pause_from_dropout():
+    segments = [
+        {"start": 0.0, "end": 2.0, "text": "before"},
+        {"start": 4.0, "end": 6.0, "text": "after"},
+    ]
+    hits = [
+        {"t": 2.2, "kind": "silence", "severity": "medium",
+         "evidence": {"start": 2.2, "end": 3.8}},
+        {"t": 4.5, "kind": "silence", "severity": "medium",
+         "evidence": {"start": 4.5, "end": 5.0}},
+    ]
+    kept, suppressed = defects.suppress_structural(hits, transcript_segments=segments)
+    assert [h["t"] for h in kept] == [4.5], "silence inside speech must stay as dropout"
+    assert len(suppressed) == 1
+    assert suppressed[0]["suppression"] == "between-transcript-segments"
+
+
 def test_defect_prerequisites_surface_ffmpeg_failure(
     black_flash_clip, silence_clip, workdir, monkeypatch
 ):

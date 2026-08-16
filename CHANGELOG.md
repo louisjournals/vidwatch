@@ -18,7 +18,9 @@
   silence, luma edges, PTS gaps and duplicate shots, reusing the existing
   content-change/transition confirmation and tile-wise comparison paths. Detector
   hits within 0.25s are merged into one event candidate so burst evidence runs once
-  per physical event.
+  per physical event. Structural suppression now removes luma spikes explained by
+  confirmed scene cuts and silence wholly between cached transcript segments, without
+  changing any measured detector threshold.
 - Added `read --candidates` burst evidence collection. Candidate and explicit
   timestamps sit outside the automatic frame ceiling and survive dedup; JSON frame
   records now include `scene_id`, adjacent `change_score`, and nearest transcript

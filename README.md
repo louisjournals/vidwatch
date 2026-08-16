@@ -23,7 +23,7 @@ cost image tokens — so the real question is *which* evidence to extract.
 | `extract` | local preprocessing | Primary handoff command: builds `brief.md` plus timestamped sheets/frames for another model or person to review. |
 | `quick` | one call | Short clips (under ~3 min): transcript + dense frames in a single pass. Refuses longer clips. |
 | `probe` | 0 image tokens | Duration, transcript, and motion profile. Usually answers the question or narrows the window. |
-| `defects` | 0 image tokens | Deterministic black/freeze/silence/luma/PTS/duplicate-shot locator; nearby detector hits merge into one event candidate before visual reading. |
+| `defects` | 0 image tokens | Deterministic black/freeze/silence/luma/PTS/duplicate-shot locator; nearby hits merge, luma at confirmed cuts is suppressed, and cached transcript gaps suppress normal pauses before visual reading. |
 | `scan` | ~1-3k tokens | Contact sheets for locating a moment across a longer video. |
 | `read` | ~5-20k tokens | Dense evidence frames on one bounded window, with optional local burst sampling around candidate timestamps. |
 
@@ -63,7 +63,7 @@ Full command reference, measurements and rationale: [SKILL.md](SKILL.md).
 ## Tests
 
 ```bash
-python3 -m pytest tests -q     # 124 tests, clips synthesised with ffmpeg, no network
+python3 -m pytest tests -q     # 126 tests, clips synthesised with ffmpeg, no network
 ```
 
 ## Licence

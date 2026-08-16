@@ -486,6 +486,13 @@ path at 0.25s sampling, then compared with the existing tile-wise score. Detecto
 hits whose timestamps fall within a 0.25s anchored merge window collapse into one
 event candidate so one physical defect produces one burst-evidence request.
 
+**Structural suppression does not change detector thresholds.** Before merging,
+luma-spike hits that coincide within that same 0.25s window with a scene cut already
+confirmed by `dedup.confirm_transitions` are dropped as intentional edit structure.
+Silence is suppressed only when its entire span sits between two cached transcript
+segments; silence overlapping a segment remains a dropout candidate. If no transcript
+is cached, silence is never suppressed by guesswork.
+
 **Dedup scores the loudest tile, not the whole frame.** A whole-frame mean
 difference cannot see a localised change. Measured on macOS 15 / ffmpeg 7.1.1
 through the tool's own path (512px JPEG at q3, downscaled to 128x128 grayscale,

@@ -322,7 +322,17 @@ def cmd_defects(args) -> int:
     if path is None:
         raise VidwatchError("defects needs the video file; download failed")
 
-    candidates = defectsmod.locate(path, meta)
+    duration = float(meta.get("duration") or 0.0)
+    raw_scene_cuts = media.get_cuts(rc, path, start=0.0, end=duration or None)
+    scene_cuts = media.cluster_cuts(raw_scene_cuts)
+    if scene_cuts:
+        scene_cuts = dedupmod.confirm_transitions(path, scene_cuts)
+    trans = rc.read_json("transcript.json") or {"segments": []}
+    candidates = defectsmod.locate(
+        path, meta,
+        scene_cuts=scene_cuts,
+        transcript_segments=trans.get("segments") or [],
+    )
     if args.json:
         print(json.dumps(candidates, indent=2, ensure_ascii=False))
         return 0
