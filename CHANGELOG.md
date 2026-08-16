@@ -7,9 +7,10 @@
 - Re-fitted the continuous adaptive sampling curve so every anchor through three
   minutes meets or exceeds the pre-1.4.0 coverage, while retaining the stronger
   1.4.0 values on longer windows. Restored the 10-minute-vs-30-second regression.
-- Added `AUDIT_2026-08-16.md`, a fresh independently numbered audit. The old
-  external B-numbered report was never recovered, so its missing definitions are
-  explicitly historical rather than guessed.
+- Recorded `AUDIT_2026-08-16.md` as a fresh independently numbered audit. At the
+  time it was added, its findings were still open; the audit was a record, not a
+  completed deliverable. The old external B-numbered report was never recovered,
+  so its missing definitions remain explicitly historical rather than guessed.
 - Added a joint frame × resolution budget for `read`/`quick`: automatic width can
   fall from 512px to a provisional 384px floor, but frame count never falls for
   budget reasons. Explicit `--width` is honoured exactly and over-budget runs warn
@@ -36,6 +37,22 @@
   default is stated once and matches `tx.DEFAULT_MODEL`, Rules are numbered in
   order, the sampling table matches the current planner, and README command/test
   counts match the implemented CLI.
+
+### Audit closeout
+
+- **A — detector failure is loud:** every ffmpeg/ffprobe detector now distinguishes
+  a successful zero-result run from process failure and raises `VidwatchError` with
+  the stderr tail on non-zero exit. `read` also raises cleanly on empty extraction.
+- **B — scan budget:** custom `--grid` is priced using the requested grid before
+  admission and the assembled sheet cost is checked against `--max-tokens`; the
+  stale recovered-audit `B6` label was removed from the solver comment.
+- **C — cache and output correctness:** embedded subtitle cache identity includes
+  requested language, local cache keys use `st_mtime_ns`, repeated `extract --out`
+  runs prune only prior my-vidwatch-owned outputs via a manifest, and millisecond
+  timestamps round total milliseconds before formatting.
+- **D — honest reporting:** cold-cache `defects` warns that transcript-based silence
+  suppression did not run, and `read --json` reports both the pre-dedup resolution
+  budget count and the post-dedup frame count so resolution cost is not understated.
 
 ## 1.4.0
 
