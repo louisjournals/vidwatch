@@ -222,7 +222,7 @@ def detect_cuts(
         "-copyts", "-i", str(media_path), "-an", "-sn",
         "-vf", vf, "-fps_mode", "vfr", "-f", "null", "-",
     ]
-    proc = run(cmd, check=False, timeout=7200)
+    proc = run(cmd, timeout=7200)
     cuts = [float(m.group(1)) for m in _PTS_RE.finditer(proc.stderr or b"")]
     lo, hi = start, (end if end is not None else float("inf"))
     return sorted({round(c, 3) for c in cuts if lo <= c <= hi})

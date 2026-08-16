@@ -430,6 +430,32 @@ so a frame has roughly **3.15×** the pixels of 16:9 landscape at the same width
 the floor must be calibrated on portrait footage rather than inferred from
 landscape.
 
+**Qwen token estimates are provisional.** The current model follows the owner's
+/28 compatibility assumption: round each dimension to the nearest multiple of
+28, then count the resulting grid. Thus 512x288 -> 504x280 -> 18x10 = 180 raw
+spatial tokens. `qwen` is the conservative image-path model and assumes a
+host-side `min_pixels` floor equivalent to 256 visual tokens, so small frames are
+not discounted below 256. `qwen:video` is opt-in and applies 2x temporal grouping
+to the raw spatial count, giving 90 tokens/frame for that 512x288 example. These
+figures are **derived, not measured**, and upstream Qwen3-VL configuration is not
+fully consistent across published processor/config surfaces. TODO: verify both
+models against API-reported usage before promoting any Qwen number to measured.
+
+`qwen:video` also has a semantic warning unrelated to token maths: scene-mode
+sampling and dedup produce **irregularly spaced frames**. Feeding those JPEGs to
+a host as one Qwen video sequence gives the model a uniform-timing signal that
+is false, which can corrupt temporal reasoning even if the token estimate is
+arithmetically correct. Use `qwen:video` only when the host preserves real frame
+timing or when timing is irrelevant; otherwise use conservative `qwen` image
+semantics.
+
+**Burst sampling is evidence collection, not detection.** `read --candidates`
+adds dense local samples around timestamps already found by `defects` or another
+locator while leaving baseline coverage unchanged elsewhere. The default is
+10fps inside +/-0.5s. Even 8-12fps cannot guarantee a single bad frame in 30fps
+footage, so Phase 5 does the deterministic finding and burst sampling gathers
+human/model-readable evidence around it.
+
 **Deterministic defect thresholds.** Calibrated on 320x180, 30fps synthetic
 fixtures encoded through libx264. A planted 0.15s black flash was measured as
 0.167s and produced a 219-point YAVG edge; a planted 1.0s freeze measured

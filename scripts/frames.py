@@ -25,6 +25,8 @@ WIDE_AUTO_RATE_LIMIT = 3.0
 FOCUS_AUTO_RATE_LIMIT = 4.0
 MIN_WIDE_FRAMES = 12
 MIN_FOCUS_FRAMES = 18
+DEFAULT_BURST_FPS = 10.0
+DEFAULT_BURST_RADIUS = 0.5
 
 # Piecewise-linear lower envelopes. These are deliberately *not* sampling
 # buckets: interpolation makes the underlying target continuous at every point.
@@ -108,6 +110,38 @@ def sampling_plan(
         return fps, target, f"explicit {fps:g}fps"
     fps, target = adaptive_sampling(duration, focused=focused, max_frames=max_frames)
     return fps, target, "adaptive-focus" if focused else "adaptive-wide"
+
+
+def burst_times(
+    candidates: list[float],
+    *,
+    start: float,
+    end: float,
+    fps: float = DEFAULT_BURST_FPS,
+    radius: float = DEFAULT_BURST_RADIUS,
+) -> list[float]:
+    """Dense local evidence samples around already-detected timestamps.
+
+    This is evidence collection, not detection. Baseline sampling is planned
+    separately and these timestamps are merged on top of it, so adding a burst
+    never steals frames from the rest of the window.
+    """
+    if fps <= 0:
+        raise VidwatchError("burst fps must be > 0")
+    if radius < 0:
+        raise VidwatchError("burst radius must be >= 0")
+    step = 1.0 / fps
+    out: set[float] = set()
+    for candidate in candidates:
+        if candidate < start or candidate > end:
+            continue
+        lo = max(start, candidate - radius)
+        hi = min(end, candidate + radius)
+        n = max(0, int(math.floor((hi - lo) / step + 1e-9)))
+        for i in range(n + 1):
+            out.add(round(min(hi, lo + i * step), 3))
+        out.add(round(candidate, 3))
+    return sorted(out)
 
 
 FONT_CANDIDATES = (

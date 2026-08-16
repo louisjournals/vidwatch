@@ -21,6 +21,14 @@ from 1568 to 2576.
 Gemini charges a flat 258 when BOTH sides are at most 384, and otherwise tiles
 at 768 and charges 258 per tile.
 
+Qwen estimates are provisional. This repo currently models the owner's /28
+compatibility assumption: dimensions are rounded to the nearest multiple of 28,
+then counted on that grid. The conservative image model also assumes the common
+host-side 256-token min_pixels floor; the video-sequence model applies 2x
+temporal grouping to the spatial count. Current upstream Qwen3-VL configs are
+not fully consistent with that assumption, so API-reported usage must calibrate
+these figures before they are treated as measured.
+
 The uncapped case matters
 -------------------------
 GPT-5.x at detail `original`/`auto` applies no patch budget and no pixel cap, so
@@ -45,7 +53,7 @@ class TokenModel:
     """A model's image cost rule plus the frame size worth sending it."""
 
     name = "generic"
-    max_edge = 1536
+    max_edge: int | None = 1536
     note = "conservative upper bound across vendors"
     uncapped = False          # True when the provider applies no size limit
 
@@ -159,6 +167,46 @@ class Gemini(TokenModel):
         return self.PER_TILE * _patches(width, height, self.TILE)
 
 
+# ----------------------------------------------------------------------- Qwen
+
+QWEN_FACTOR = 28
+QWEN_IMAGE_MIN_TOKENS = 256
+
+
+def _round_to_factor(value: int, factor: int) -> int:
+    """Nearest positive factor multiple; 512 -> 504 and 288 -> 280 at /28."""
+    return max(factor, int(math.floor(value / factor + 0.5)) * factor)
+
+
+def _qwen_spatial_tokens(width: int, height: int) -> int:
+    w = _round_to_factor(width, QWEN_FACTOR)
+    h = _round_to_factor(height, QWEN_FACTOR)
+    return max(1, (w // QWEN_FACTOR) * (h // QWEN_FACTOR))
+
+
+class QwenImage(TokenModel):
+    """Provisional Qwen image estimate on a /28 grid with a 256-token floor."""
+
+    name = "qwen"
+    max_edge = None
+    note = "provisional /28 image grid; assumes host-side 256-token min_pixels floor"
+
+    def tokens(self, width: int, height: int) -> int:
+        return max(QWEN_IMAGE_MIN_TOKENS, _qwen_spatial_tokens(width, height))
+
+
+class QwenVideo(TokenModel):
+    """Provisional Qwen video-sequence average: /28 spatial grid, 2x temporal."""
+
+    name = "qwen:video"
+    max_edge = None
+    note = "provisional /28 spatial grid + 2x temporal grouping; only for true video-sequence input"
+    TEMPORAL = 2
+
+    def tokens(self, width: int, height: int) -> int:
+        return max(1, math.ceil(_qwen_spatial_tokens(width, height) / self.TEMPORAL))
+
+
 # -------------------------------------------------------------------- generic
 
 class Generic(TokenModel):
@@ -176,9 +224,9 @@ class Generic(TokenModel):
     def __init__(self) -> None:
         self._models = [
             Anthropic(), AnthropicHiRes(), OpenAITile(),
-            OpenAIPatch(), OpenAIPatchHigh(), Gemini(),
+            OpenAIPatch(), OpenAIPatchHigh(), Gemini(), QwenImage(), QwenVideo(),
         ]
-        self.max_edge = min(m.max_edge for m in self._models)
+        self.max_edge = min(m.max_edge for m in self._models if m.max_edge is not None)
 
     def tokens(self, width: int, height: int) -> int:
         return max(m.tokens(width, height) for m in self._models)
@@ -197,11 +245,14 @@ MODELS = {
     "openai:5-high": OpenAIPatchHigh,
     "gemini": Gemini,
     "google": Gemini,
+    "qwen": QwenImage,
+    "qwen3-vl": QwenImage,
+    "qwen:video": QwenVideo,
 }
 
 CHOICES = (
     "generic", "anthropic", "anthropic:hires",
-    "openai:4o", "openai:5", "openai:5-high", "gemini",
+    "openai:4o", "openai:5", "openai:5-high", "gemini", "qwen", "qwen:video",
 )
 
 
@@ -215,12 +266,14 @@ def resolve(name: str | None = None) -> TokenModel:
     return cls()
 
 
-def fit_to_edge(width: int, height: int, max_edge: int) -> tuple[int, int]:
+def fit_to_edge(width: int, height: int, max_edge: int | None) -> tuple[int, int]:
     """Scale down so the LONG edge is at most max_edge. Even dimensions.
 
     Capping width alone leaves portrait sources unbounded: a 1080x1920 clip
     asked for at width 1536 becomes 1536x2731.
     """
+    if max_edge is None:
+        return width, height
     long_edge = max(width, height)
     if long_edge <= max_edge:
         return width, height
@@ -234,5 +287,5 @@ def compare(width: int, height: int) -> list[tuple[str, int]]:
     """Per-model cost of one frame — used by the preflight report."""
     return [
         (m.name, m.tokens(width, height))
-        for m in (Anthropic(), OpenAITile(), OpenAIPatch(), Gemini())
+        for m in (Anthropic(), OpenAITile(), OpenAIPatch(), Gemini(), QwenImage(), QwenVideo())
     ]

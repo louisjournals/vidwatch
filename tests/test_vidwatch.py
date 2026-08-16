@@ -536,6 +536,30 @@ def test_gemini_flat_rate_only_under_384():
     assert m.tokens(800, 400) == 2 * 258
 
 
+def test_qwen_models_use_provisional_28_grid_and_image_floor():
+    image = vendors.resolve("qwen")
+    video = vendors.resolve("qwen:video")
+    # Owner-specified provisional model: 512x288 -> 504x280 -> 18x10.
+    assert vendors._qwen_spatial_tokens(512, 288) == 180
+    assert image.tokens(512, 288) == 256, "image min_pixels floor applies"
+    assert video.tokens(512, 288) == 90
+    assert image.tokens(1024, 576) == 777
+    assert video.tokens(1024, 576) == 389
+    assert vendors.resolve("qwen3-vl").tokens(512, 288) == 256
+
+
+def test_qwen_rounds_to_nearest_28_before_counting():
+    assert vendors._round_to_factor(512, 28) == 504
+    assert vendors._round_to_factor(288, 28) == 280
+    assert vendors._round_to_factor(1024, 28) == 1036
+
+
+def test_qwen_video_is_opt_in_and_cheaper_than_image_path():
+    assert vendors.resolve("qwen").name == "qwen"
+    assert vendors.resolve("qwen:video").name == "qwen:video"
+    assert vendors.resolve("qwen:video").tokens(512, 288) < vendors.resolve("qwen").tokens(512, 288)
+
+
 def test_anthropic_hires_tier_has_a_larger_edge():
     assert vendors.resolve("anthropic:hires").max_edge == 2576
     assert vendors.resolve("anthropic").max_edge == 1568
@@ -554,8 +578,8 @@ def test_generic_upper_bounds_every_model():
 
 def test_generic_uses_the_tightest_cap():
     g = vendors.resolve("generic")
-    assert g.max_edge == min(
-        vendors.resolve(n).max_edge for n in vendors.CHOICES if n != "generic")
+    caps = [vendors.resolve(n).max_edge for n in vendors.CHOICES if n != "generic"]
+    assert g.max_edge == min(c for c in caps if c is not None)
 
 
 def test_frames_are_content_addressed():
@@ -1522,3 +1546,62 @@ def test_defects_cli_json_records_are_stable_shape(black_flash_clip, workdir):
     assert data
     assert all(set(c) == {"t", "kind", "severity", "evidence"} for c in data)
     assert any(c["kind"] == "black" for c in data)
+
+
+# ------------------------------------------------ Phase 6: burst evidence + Qwen
+
+def test_burst_sampling_adds_local_evidence_without_reducing_baseline(slides_clip, workdir):
+    import json
+    env = {**os.environ, "VIDWATCH_CACHE": str(workdir / "cache_burst")}
+    base = subprocess.run([
+        sys.executable, str(SCRIPTS / "vidwatch.py"), "read", str(slides_clip),
+        "--start", "0", "--end", "15", "--mode", "uniform", "--max-frames", "12",
+        "--no-dedup", "--json",
+    ], capture_output=True, text=True, check=False, env=env)
+    burst = subprocess.run([
+        sys.executable, str(SCRIPTS / "vidwatch.py"), "read", str(slides_clip),
+        "--start", "0", "--end", "15", "--mode", "uniform", "--max-frames", "12",
+        "--candidates", "7.5", "--burst-fps", "10", "--burst-radius", "0.5",
+        "--no-dedup", "--json",
+    ], capture_output=True, text=True, check=False, env=env)
+    assert base.returncode == 0, base.stderr
+    assert burst.returncode == 0, burst.stderr
+    a, b = json.loads(base.stdout), json.loads(burst.stdout)
+    assert a["rate"]["target"] == b["rate"]["target"] == 12
+    assert len(b["frames"]) > len(a["frames"]), "burst must add evidence, not replace baseline"
+    assert b["burst"]["candidates"] == [7.5]
+    assert b["burst"]["frames"] >= 10
+    assert any(abs(f["t"] - 7.5) < 0.001 for f in b["frames"])
+
+
+def test_read_json_frames_include_timeline_context(slides_clip, workdir):
+    import cache as cachemod
+    import json
+    env = {**os.environ, "VIDWATCH_CACHE": str(workdir / "cache_frame_context")}
+    monkey = os.environ.get("VIDWATCH_CACHE")
+    os.environ["VIDWATCH_CACHE"] = env["VIDWATCH_CACHE"]
+    try:
+        rc_obj = cachemod.RunCache(str(slides_clip))
+        rc_obj.write_json("transcript.json", {
+            "source": "fixture",
+            "segments": [{"start": 0.0, "end": 5.0, "text": "first line"},
+                         {"start": 5.0, "end": 15.0, "text": "second line"}],
+        })
+    finally:
+        if monkey is None:
+            os.environ.pop("VIDWATCH_CACHE", None)
+        else:
+            os.environ["VIDWATCH_CACHE"] = monkey
+    run = subprocess.run([
+        sys.executable, str(SCRIPTS / "vidwatch.py"), "read", str(slides_clip),
+        "--start", "0", "--end", "15", "--mode", "uniform", "--max-frames", "6",
+        "--no-dedup", "--json",
+    ], capture_output=True, text=True, check=False, env=env)
+    assert run.returncode == 0, run.stderr
+    frames = json.loads(run.stdout)["frames"]
+    assert frames
+    assert all({"t", "ts", "path", "scene_id", "change_score", "transcript_line"} <= set(f)
+               for f in frames)
+    assert any(f["change_score"] is not None for f in frames[1:])
+    assert any(f["transcript_line"] and f["transcript_line"]["text"] == "second line"
+               for f in frames)

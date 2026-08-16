@@ -20,6 +20,7 @@ import argparse
 import json
 import shlex
 import sys
+from bisect import bisect_right
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -343,7 +344,7 @@ def cmd_defects(args) -> int:
         print(f"{fmt_ts(t, ms=True):>12}  {c['severity']:<6}  {c['kind']}")
         print(f"  evidence: {json.dumps(c['evidence'], ensure_ascii=False)}")
         print(f"  read --start {st:.3f} --end {en:.3f}: python3 {quoted_cli} read "
-              f"{quoted_source} --start {st:.3f} --end {en:.3f}")
+              f"{quoted_source} --start {st:.3f} --end {en:.3f} --candidates {t:.3f}")
     print(BAR)
     return 0
 
@@ -456,6 +457,48 @@ def cmd_scan(args) -> int:
 
 # ----------------------------------------------------------------------- read
 
+def _nearest_transcript_line(segments: list[dict], t: float) -> dict | None:
+    if not segments:
+        return None
+
+    def distance(seg: dict) -> float:
+        st = float(seg.get("start", 0.0))
+        en = float(seg.get("end", st))
+        if st <= t <= en:
+            return 0.0
+        return min(abs(t - st), abs(t - en))
+
+    seg = min(segments, key=distance)
+    return {
+        "start": round(float(seg.get("start", 0.0)), 3),
+        "end": round(float(seg.get("end", seg.get("start", 0.0))), 3),
+        "text": seg.get("text", ""),
+    }
+
+
+def _frame_json_records(
+    kept: list[tuple[float, Path]],
+    *,
+    scene_cuts: list[float],
+    transcript_segments: list[dict],
+) -> list[dict]:
+    thumbs = dedupmod.thumbnails([p for _, p in kept])
+    records = []
+    for i, (t, p) in enumerate(kept):
+        change_score = None
+        if i > 0 and len(thumbs) == len(kept):
+            change_score = round(dedupmod.score(thumbs[i], thumbs[i - 1])[0], 2)
+        records.append({
+            "t": t,
+            "ts": fmt_ts(t, ms=True),
+            "path": str(p),
+            "scene_id": 1 + bisect_right(scene_cuts, t),
+            "change_score": change_score,
+            "transcript_line": _nearest_transcript_line(transcript_segments, t),
+        })
+    return records
+
+
 def cmd_read(args) -> int:
     model = vendors.resolve(args.vendor)
     rc, meta, path = prepare(args.source, need_video=True)
@@ -478,27 +521,40 @@ def cmd_read(args) -> int:
         window, focused=focused, fps_override=args.fps,
         max_frames=args.max_frames or framesmod.DEFAULT_MAX_FRAMES,
     )
-    width, est_h, resolution_mode = resolve_read_frame_size(
-        args.width, frames=cap, meta=meta, model=model,
-        max_tokens=args.max_tokens, fps=fps,
-    )
 
     explicit = [parse_ts(t) for t in (args.timestamps or [])]
     explicit = [t for t in explicit if t is not None and start <= t <= end]
+    candidates = [parse_ts(t) for t in (args.candidates or [])]
+    candidates = [t for t in candidates if t is not None and start <= t <= end]
+    burst = framesmod.burst_times(
+        candidates, start=start, end=end,
+        fps=args.burst_fps, radius=args.burst_radius,
+    )
 
-    times, strategy = framesmod.select_candidates(
+    baseline, strategy = framesmod.select_candidates(
         rc, path, mode=args.mode, start=start, end=end, target=cap
     )
-    times = even_sample(times, max(1, cap - len(explicit)))
-    times = sorted(set(times) | set(explicit))
+    baseline = even_sample(baseline, cap)
+    # Caller timestamps and burst evidence sit OUTSIDE the automatic ceiling.
+    # They must never steal baseline coverage from the rest of the window.
+    times = sorted(set(baseline) | set(explicit) | set(burst))
 
-    rid = framesmod.run_id(stage="read", start=start, end=end, w=width,
-                           mode=args.mode, cap=cap, ex=tuple(explicit))
+    width, est_h, resolution_mode = resolve_read_frame_size(
+        args.width, frames=len(times), meta=meta, model=model,
+        max_tokens=args.max_tokens, fps=fps,
+    )
+
+    rid = framesmod.run_id(
+        stage="read", start=start, end=end, w=width, mode=args.mode, cap=cap,
+        ex=tuple(explicit), candidates=tuple(candidates), burst_fps=args.burst_fps,
+        burst_radius=args.burst_radius,
+    )
     frame_dir = rc.path("frames", rid)
     got = framesmod.extract(path, times, frame_dir, width=width, label=False)
 
+    protected_times = explicit + burst
     protect = {i for i, (t, _) in enumerate(got)
-               if any(abs(t - e) < 0.05 for e in explicit)}
+               if any(abs(t - e) < 0.05 for e in protected_times)}
 
     mode = "off" if args.no_dedup else args.dedup
     if mode == "off":
@@ -513,8 +569,6 @@ def cmd_read(args) -> int:
 
     keep_set = set(kept_paths)
     kept = [(t, p) for t, p in got if p in keep_set]
-    if len(kept) > cap:
-        kept = even_sample(kept, cap)
 
     w, h = framesmod.frame_dims(kept[0][1])
     per_frame = model.tokens(w, h)
@@ -523,6 +577,13 @@ def cmd_read(args) -> int:
 
     trans = rc.read_json("transcript.json") or {"source": "not built", "segments": []}
     win_text = tx.render(trans["segments"], start, end) if trans["segments"] else ""
+    raw_scene_cuts = media.get_cuts(rc, path, start=start, end=end)
+    scene_cuts = media.cluster_cuts(raw_scene_cuts)
+    if scene_cuts:
+        scene_cuts = dedupmod.confirm_transitions(path, scene_cuts)
+    frame_records = _frame_json_records(
+        kept, scene_cuts=scene_cuts, transcript_segments=trans["segments"],
+    )
 
     if args.json:
         print(json.dumps({
@@ -530,8 +591,10 @@ def cmd_read(args) -> int:
             "window": [start, end],
             "strategy": strategy,
             "rate": {"fps": fps, "mode": rate_label, "target": cap},
+            "burst": {"candidates": candidates, "fps": args.burst_fps,
+                      "radius": args.burst_radius, "frames": len(burst)},
             "dedup": stats,
-            "frames": [{"t": t, "ts": fmt_ts(t, ms=True), "path": str(p)} for t, p in kept],
+            "frames": frame_records,
             "frame_size": [w, h],
             "resolution_mode": resolution_mode,
             "vendor": model.name,
@@ -547,6 +610,9 @@ def cmd_read(args) -> int:
                f"({fps:g}fps requested)")
     out.append(f"selection  {strategy}   {stats['candidates']} candidates -> "
                f"{len(kept)} frames")
+    if candidates:
+        out.append(f"burst      {len(candidates)} candidate(s), {args.burst_fps:g}fps "
+                   f"within +/-{args.burst_radius:g}s -> {len(burst)} protected samples")
     if stats.get("gated"):
         out.append(f"dedup      SKIPPED - {stats['reason']}")
     elif stats.get("dropped"):
@@ -972,7 +1038,13 @@ def build_parser() -> argparse.ArgumentParser:
                     help=f"automatic sampling ceiling (default {framesmod.DEFAULT_MAX_FRAMES})")
     rd.add_argument("--mode", choices=("scene", "keyframe", "uniform"), default="scene")
     rd.add_argument("--timestamps", nargs="*", default=None,
-                    help="always include these times (survive dedup)")
+                    help="always include these exact times; outside the automatic frame ceiling")
+    rd.add_argument("--candidates", nargs="*", default=None,
+                    help="known defect/event timestamps to densify locally for evidence")
+    rd.add_argument("--burst-fps", type=float, default=framesmod.DEFAULT_BURST_FPS,
+                    help=f"local evidence rate around --candidates (default {framesmod.DEFAULT_BURST_FPS:g}fps)")
+    rd.add_argument("--burst-radius", type=float, default=framesmod.DEFAULT_BURST_RADIUS,
+                    help=f"seconds on each side of a candidate (default {framesmod.DEFAULT_BURST_RADIUS:g})")
     rd.add_argument("--dedup", choices=("auto", "on", "off"), default="auto",
                     help="auto skips dedup when the clip's noise floor is as "
                          "loud as its real changes (default)")
