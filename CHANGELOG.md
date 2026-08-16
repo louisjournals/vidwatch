@@ -46,8 +46,8 @@ Fixes from a two-agent external audit that failed 1.1.0.
   frames no longer bypass the provider limit.
 - `quick` subcommand for clips under 3 minutes (1.2.0).
 
-### Known outstanding
-Audit items B1-B4, B6, B8-B11 remain. See the audit report.
+### Historical audit note
+The external B-numbered audit report was never recovered; its original finding definitions are unavailable. A fresh audit with independent numbering is recorded in `AUDIT_2026-08-16.md`.
 
 ## 1.2.0
 - Long-edge cap; `quick` single-pass subcommand.
