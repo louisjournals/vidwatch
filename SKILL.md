@@ -226,7 +226,7 @@ capability the host provides.
 |---|---|
 | `--start` / `--end` | `SS`, `MM:SS`, or `HH:MM:SS`. Required in practice. |
 | `--width 1024` | Reading on-screen text: slides, terminals, code, captions. An explicit width is honoured exactly. If omitted, resolution is budget-managed from 512px down to a provisional 384px floor; frame count is never reduced to fit budget. |
-| `--vendor` | `anthropic`, `openai`, `gemini`, `generic`. Sets the token model behind the joint frame × resolution budget. |
+| `--vendor` | `anthropic`, `openai`, `gemini`, `qwen`, `qwen:video`, `generic`. Sets the token model behind the joint frame × resolution budget. |
 | `--fps N` | Force a sampling rate. Bypasses the frame cap entirely — a stated rate is honoured on a 30-second clip and a 30-minute one alike. You own the cost. |
 | `--max-tokens N` | Budget **tripwire**, default 20000. Warns and reports the affordable window; never silently widens the interval. |
 | `--max-frames N` | Automatic-sampling frame ceiling, default 100. |

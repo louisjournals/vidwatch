@@ -56,10 +56,9 @@
 
 ## 1.4.0
 
-- Replaced the old bucketed sampling implementation with a new my-vidwatch
-  adaptive coverage curve. Sampling now scales continuously with window length,
-  focused windows tighten coverage, and explicit `--fps` remains exact.
-- Kept the adaptive sampling implementation entirely within my-vidwatch.
+- Reworked sampling into a continuous adaptive coverage curve. Sampling now scales
+  continuously with window length, focused windows tighten coverage, and explicit
+  `--fps` remains exact.
 - Updated tests and documentation to describe the adaptive sampling model.
 
 ## 1.3.0
