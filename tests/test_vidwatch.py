@@ -896,6 +896,74 @@ def test_captions_reused_across_whisper_params():
     assert tx._reusable(cached, p3) is False
 
 
+def test_embedded_cache_identity_includes_requested_language(workdir):
+    import json
+    clip = workdir / "dual_subs.mkv"
+    if not clip.exists():
+        en = workdir / "dual_en.srt"
+        zh = workdir / "dual_zh.srt"
+        en.write_text("1\n00:00:00,500 --> 00:00:02,500\nenglish line\n", encoding="utf-8")
+        zh.write_text("1\n00:00:00,500 --> 00:00:02,500\n中文行\n", encoding="utf-8")
+        subprocess.run([
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", "color=gray:s=320x180:r=10:d=3",
+            "-i", str(en), "-i", str(zh), "-map", "0:v", "-map", "1:s", "-map", "2:s",
+            "-c:v", "libx264", "-c:s", "srt",
+            "-metadata:s:s:0", "language=eng", "-metadata:s:s:1", "language=zho",
+            str(clip),
+        ], check=True)
+    env = {**os.environ, "VIDWATCH_CACHE": str(workdir / "cache_dual_subs")}
+    def probe(lang):
+        rc = subprocess.run([
+            sys.executable, str(SCRIPTS / "vidwatch.py"), "probe", str(clip),
+            "--no-cuts", "--no-whisper", "--language", lang, "--json",
+        ], capture_output=True, text=True, check=False, env=env)
+        assert rc.returncode == 0, rc.stderr
+        return json.loads(rc.stdout)["transcript"]
+    first, second = probe("en"), probe("zh")
+    assert first["language"] == "eng" and "english line" in first["segments"][0]["text"]
+    assert second["language"] == "zho" and "中文行" in second["segments"][0]["text"]
+
+
+def test_local_cache_key_uses_nanosecond_mtime(workdir):
+    import cache as cachemod
+    p = workdir / "mtime_identity.bin"
+    p.write_bytes(b"a" * 4096)
+    sec = 1_700_000_000
+    os.utime(p, ns=(sec * 1_000_000_000 + 100_000_000, sec * 1_000_000_000 + 100_000_000))
+    first = cachemod._key_for(str(p))
+    p.write_bytes(b"b" * 4096)
+    os.utime(p, ns=(sec * 1_000_000_000 + 900_000_000, sec * 1_000_000_000 + 900_000_000))
+    second = cachemod._key_for(str(p))
+    assert first != second
+
+
+def test_fmt_ts_rounds_total_milliseconds_before_split():
+    assert util.fmt_ts(1.9995, ms=True) == "00:02.000"
+    assert util.fmt_ts(59.9996, ms=True) == "01:00.000"
+
+
+def test_extract_out_manifest_removes_only_prior_generated_files(slides_clip, workdir):
+    out = workdir / "extract_reuse"
+    out.mkdir(exist_ok=True)
+    sentinel = out / "keep-me.txt"
+    sentinel.write_text("user file")
+    env = {**os.environ, "VIDWATCH_CACHE": str(workdir / "cache_extract_reuse")}
+    base = [
+        sys.executable, str(SCRIPTS / "vidwatch.py"), "extract", str(slides_clip),
+        "--layout", "frames", "--out", str(out), "--goal", "test",
+        "--no-whisper",
+    ]
+    first = subprocess.run(base + ["--frames", "6"], capture_output=True, text=True, check=False, env=env)
+    assert first.returncode == 0, first.stderr
+    assert len(list((out / "frames").glob("*.jpg"))) == 6
+    second = subprocess.run(base + ["--frames", "3"], capture_output=True, text=True, check=False, env=env)
+    assert second.returncode == 0, second.stderr
+    assert len(list((out / "frames").glob("*.jpg"))) == 3
+    assert sentinel.read_text() == "user file"
+    assert (out / ".my-vidwatch-manifest.json").exists()
+
+
 # ------------------------------------------------ B9: cut-burst clustering
 
 def test_cluster_collapses_transition_bursts():

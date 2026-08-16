@@ -60,7 +60,7 @@ def _key_for(source: str) -> str:
         if not p.exists():
             raise VidwatchError(f"no such file: {source}")
         st = p.stat()
-        payload = f"file:{p}:{st.st_size}:{int(st.st_mtime)}"
+        payload = f"file:{p}:{st.st_size}:{st.st_mtime_ns}"
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 

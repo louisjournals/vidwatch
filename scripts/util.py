@@ -86,13 +86,17 @@ def parse_ts(value: str | float | None) -> float | None:
 def fmt_ts(seconds: float, *, ms: bool = False) -> str:
     """Seconds -> MM:SS or HH:MM:SS (with .mmm when ms=True)."""
     seconds = max(0.0, float(seconds))
-    whole = int(seconds)
-    frac = seconds - whole
+    if ms:
+        total_ms = round(seconds * 1000)
+        whole, millis = divmod(total_ms, 1000)
+    else:
+        whole = int(seconds)
+        millis = 0
     h, rem = divmod(whole, 3600)
     m, s = divmod(rem, 60)
     base = f"{h:d}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
     if ms:
-        base += f".{round(frac * 1000):03d}"
+        base += f".{millis:03d}"
     return base
 
 

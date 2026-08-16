@@ -801,6 +801,36 @@ def cmd_quick(args) -> int:
 # One moment per second of video, capped so a long clip does not produce a
 # hundred sheets. Density is what makes the handoff useful; sheets are cheap.
 DEFAULT_HANDOFF_FRAMES = 0          # 0 = derive from duration
+HANDOFF_MANIFEST = ".my-vidwatch-manifest.json"
+
+
+def _clean_previous_handoff(out_dir: Path) -> None:
+    """Remove only files listed in my-vidwatch's own prior-run manifest."""
+    manifest = out_dir / HANDOFF_MANIFEST
+    if not manifest.exists():
+        return
+    try:
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    root = out_dir.resolve()
+    for rel in data.get("generated", []):
+        if not isinstance(rel, str) or not rel:
+            continue
+        target = (out_dir / rel).resolve()
+        try:
+            target.relative_to(root)
+        except ValueError:
+            continue
+        if target.is_file():
+            target.unlink()
+
+
+def _write_handoff_manifest(out_dir: Path, generated: list[str]) -> None:
+    (out_dir / HANDOFF_MANIFEST).write_text(
+        json.dumps({"generated": sorted(set(generated))}, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
 def cmd_extract(args) -> int:
@@ -842,6 +872,9 @@ def cmd_extract(args) -> int:
     else:
         base = Path.home() / "Downloads"
         out_dir = (base if base.is_dir() else Path.cwd()) / f"{stem}-handoff"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    _clean_previous_handoff(out_dir)
+    generated: list[str] = []
     frame_dir = out_dir / "frames"
     frame_dir.mkdir(parents=True, exist_ok=True)
 
@@ -862,6 +895,7 @@ def cmd_extract(args) -> int:
         for i, (ts, src) in enumerate(got, 1):
             name = f"{i:02d}_{fmt_ts(ts).replace(':', 'm')}s.jpg"
             (frame_dir / name).write_bytes(src.read_bytes())
+            generated.append(f"frames/{name}")
             named.append((ts, name))
     else:
         # A handful of large-tile sheets rather than a dozen separate uploads.
@@ -888,6 +922,7 @@ def cmd_extract(args) -> int:
                 [p for _, p in labelled], frame_dir / name,
                 cols=cols, rows=rows, tile_width=args.tile_width,
             )
+            generated.append(f"frames/{name}")
             stamps = ", ".join(fmt_ts(t) for t, _ in labelled)
             named.append((group[0][0], f"{name}  [{stamps}]"))
 
@@ -898,6 +933,7 @@ def cmd_extract(args) -> int:
         frame_files=named,
     )
     (out_dir / "brief.md").write_text(brief, encoding="utf-8")
+    generated.append("brief.md")
 
     if args.sheet:
         cols, rows = framesmod.grid_for(min(9, len(got)))
@@ -909,6 +945,9 @@ def cmd_extract(args) -> int:
             [p for _, p in sheet_src], out_dir / "sheet.jpg",
             cols=cols, rows=rows, tile_width=256,
         )
+        generated.append("sheet.jpg")
+
+    _write_handoff_manifest(out_dir, generated)
 
     if args.json:
         print(json.dumps({

@@ -355,8 +355,10 @@ def _reusable(cached: dict | None, want: dict) -> bool:
     had = cached.get("params")
     if had == want:
         return True
-    if cached.get("source") in ("captions", "embedded"):
+    if cached.get("source") == "captions":
         return bool(had) and had.get("sub_langs") == want["sub_langs"]
+    if cached.get("source") == "embedded":
+        return bool(had) and had.get("language") == want["language"]
     return False
 
 
