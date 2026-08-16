@@ -32,7 +32,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from media import ffmpeg_bin
-from util import run
+from util import VidwatchError, run
 
 GRID = 16         # 16x16 = 256 tiles
 TILE = 8          # each tile 8x8 px -> 128x128 thumbnail
@@ -250,7 +250,7 @@ def content_changes(
         ffmpeg_bin(), "-hide_banner", "-loglevel", "error", "-i", str(media_path),
         "-vf", f"fps=1/{interval},scale={THUMB}:{THUMB},format=gray",
         "-an", "-sn", "-f", "rawvideo", "-",
-    ], check=False, timeout=3600)
+    ], timeout=3600)
 
     raw = proc.stdout or b""
     frames = [
@@ -285,19 +285,22 @@ def confirm_transitions(
     the sensitive detector for FINDING candidates while applying a stricter test
     for KEEPING them.
     """
-    import subprocess
-
     from media import ffmpeg_bin
 
     if not candidates:
         return []
 
     def grab(ts: float) -> bytes | None:
-        proc = subprocess.run([
+        proc = run([
             ffmpeg_bin(), "-hide_banner", "-loglevel", "error",
             "-ss", f"{max(0.0, ts):.3f}", "-i", str(media_path), "-frames:v", "1",
             "-vf", f"scale={THUMB}:{THUMB},format=gray", "-f", "rawvideo", "-",
-        ], capture_output=True, timeout=120, check=False)
+        ], check=False, timeout=120)
+        if proc.returncode != 0:
+            detail = (proc.stderr or b"").decode("utf-8", "replace").strip()
+            raise VidwatchError(
+                f"transition confirmation ffmpeg failed at {ts:.3f}s: {detail[-500:]}"
+            )
         out = proc.stdout or b""
         return out[:FRAME_BYTES] if len(out) >= FRAME_BYTES else None
 

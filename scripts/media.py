@@ -361,11 +361,13 @@ def detect_silence(
     Returns [] when there is no audio stream, which is the correct answer for
     a screen recording.
     """
+    if not probe_file(media_path).get("has_audio"):
+        return []
     proc = run([
         ffmpeg_bin(), "-hide_banner", "-nostats", "-i", str(media_path),
         "-af", f"silencedetect=noise={noise_db}dB:d={min_duration}",
         "-f", "null", "-",
-    ], check=False, timeout=1800)
+    ], timeout=1800)
     err = proc.stderr or b""
     starts = [float(m.group(1)) for m in _SIL_START.finditer(err)]
     ends = [float(m.group(1)) for m in _SIL_END.finditer(err)]

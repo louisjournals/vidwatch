@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import sys
 from pathlib import Path
 
@@ -25,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import cache as cachemod
 import dedup as dedupmod
+import defects as defectsmod
 import frames as framesmod
 import media
 import teardown as td
@@ -309,6 +311,40 @@ def cmd_probe(args) -> int:
         out.append(f"  read '{args.source}' --start 0 --end {int(duration)}")
     out.append(BAR)
     print("\n".join(out))
+    return 0
+
+
+# -------------------------------------------------------------------- defects
+
+def cmd_defects(args) -> int:
+    rc, meta, path = prepare(args.source, need_video=True)
+    if path is None:
+        raise VidwatchError("defects needs the video file; download failed")
+
+    candidates = defectsmod.locate(path, meta)
+    if args.json:
+        print(json.dumps(candidates, indent=2, ensure_ascii=False))
+        return 0
+
+    print(BAR)
+    print("MY-VIDWATCH DEFECTS")
+    print(BAR)
+    if not candidates:
+        print("no deterministic defect candidates found")
+        print(BAR)
+        return 0
+
+    quoted_source = shlex.quote(args.source)
+    quoted_cli = shlex.quote(str(Path(__file__).resolve()))
+    for c in candidates:
+        t = float(c["t"])
+        st = max(0.0, t - 0.75)
+        en = min(float(meta.get("duration") or t + 0.75), t + 0.75)
+        print(f"{fmt_ts(t, ms=True):>12}  {c['severity']:<6}  {c['kind']}")
+        print(f"  evidence: {json.dumps(c['evidence'], ensure_ascii=False)}")
+        print(f"  read --start {st:.3f} --end {en:.3f}: python3 {quoted_cli} read "
+              f"{quoted_source} --start {st:.3f} --end {en:.3f}")
+    print(BAR)
     return 0
 
 
@@ -901,6 +937,10 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--language", default="auto", help="whisper language hint, e.g. en, zh")
     pr.add_argument("--sub-langs", default=None, help="yt-dlp --sub-langs override")
     pr.set_defaults(func=cmd_probe)
+
+    df = sub.add_parser("defects", help="deterministic zero-token defect locator")
+    common(df)
+    df.set_defaults(func=cmd_defects)
 
     sc = sub.add_parser("scan", help="whole-video contact sheets (cheap overview)")
     common(sc)

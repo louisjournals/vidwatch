@@ -430,6 +430,18 @@ so a frame has roughly **3.15×** the pixels of 16:9 landscape at the same width
 the floor must be calibrated on portrait footage rather than inferred from
 landscape.
 
+**Deterministic defect thresholds.** Calibrated on 320x180, 30fps synthetic
+fixtures encoded through libx264. A planted 0.15s black flash was measured as
+0.167s and produced a 219-point YAVG edge; a planted 1.0s freeze measured
+1.033s; planted silence measured exactly 1.000s; a 0.5s PTS discontinuity on a
+33.3ms cadence measured as a 0.533s packet gap; and an A->B->A repeated shot
+measured a tile delta of 0.0. The module constants are therefore: blackdetect
+`d=0.03`, `pix_th=0.10`, flash <=0.25s; freezedetect `n=-50dB`, `d=0.50`;
+silencedetect `noise=-35dB`, `d=0.50`; luma edge >=40 YAVG points; PTS gap >
+`max(0.10s, 3x median cadence)`; duplicate-shot tile delta <=2.0. Duplicate-shot
+boundaries are found with the existing `content_changes` + `confirm_transitions`
+path at 0.25s sampling, then compared with the existing tile-wise score.
+
 **Dedup scores the loudest tile, not the whole frame.** A whole-frame mean
 difference cannot see a localised change. Measured on macOS 15 / ffmpeg 7.1.1
 through the tool's own path (512px JPEG at q3, downscaled to 128x128 grayscale,

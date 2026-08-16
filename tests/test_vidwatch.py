@@ -19,6 +19,7 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 import dedup
+import defects
 import frames as framesmod
 import media
 import transcript as tx
@@ -1382,3 +1383,142 @@ def test_probe_runs_without_captions(slides_clip, workdir):
     data = json.loads(rc.stdout)
     assert data["meta"]["duration"] == pytest.approx(15.0, abs=0.5)
     assert data["transcript"]["source"] == "none"
+
+
+# ------------------------------------------------ Phase 5: deterministic defects
+
+@pytest.fixture(scope="session")
+def black_flash_clip(workdir):
+    out = workdir / "black_flash.mp4"
+    if not out.exists():
+        subprocess.run([
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", "color=white:s=320x180:r=30:d=2",
+            "-vf", "drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill:enable='between(t,0.9,1.05)'",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", str(out),
+        ], check=True)
+    return out
+
+
+@pytest.fixture(scope="session")
+def freeze_clip(workdir):
+    out = workdir / "freeze.mp4"
+    if not out.exists():
+        subprocess.run([
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", "testsrc2=s=320x180:r=30:d=1.5",
+            "-vf", "tpad=stop_mode=clone:stop_duration=1",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", str(out),
+        ], check=True)
+    return out
+
+
+@pytest.fixture(scope="session")
+def silence_clip(workdir):
+    out = workdir / "silence.mp4"
+    if not out.exists():
+        subprocess.run([
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", "color=gray:s=320x180:r=30:d=3",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+            "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono:d=1",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+            "-filter_complex", "[1:a][2:a][3:a]concat=n=3:v=0:a=1[a]",
+            "-map", "0:v", "-map", "[a]", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-shortest", str(out),
+        ], check=True)
+    return out
+
+
+@pytest.fixture(scope="session")
+def duplicate_shot_clip(workdir):
+    out = workdir / "duplicate_shot.mp4"
+    if not out.exists():
+        subprocess.run([
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", "color=red:s=320x180:r=30:d=1",
+            "-f", "lavfi", "-i", "color=blue:s=320x180:r=30:d=1",
+            "-f", "lavfi", "-i", "color=red:s=320x180:r=30:d=1",
+            "-filter_complex", "[0:v][1:v][2:v]concat=n=3:v=1:a=0[v]",
+            "-map", "[v]", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(out),
+        ], check=True)
+    return out
+
+
+@pytest.fixture(scope="session")
+def pts_gap_clip(workdir):
+    out = workdir / "pts_gap.mp4"
+    if not out.exists():
+        subprocess.run([
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", "testsrc2=s=320x180:r=30:d=2",
+            "-vf", "setpts='PTS+if(gte(N,30),0.5/TB,0)'", "-fps_mode", "vfr",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", str(out),
+        ], check=True)
+    return out
+
+
+def test_defects_detects_planted_black_flash_and_luma_spike(black_flash_clip):
+    meta = media.probe_file(black_flash_clip)
+    found = defects.locate(black_flash_clip, meta)
+    black = [c for c in found if c["kind"] == "black"]
+    luma = [c for c in found if c["kind"] == "luma-spike"]
+    assert black and 0.85 <= black[0]["t"] <= 1.1
+    assert luma and any(0.85 <= c["t"] <= 1.1 for c in luma)
+
+
+def test_defects_detects_planted_freeze(freeze_clip):
+    found = defects.detect_freeze(freeze_clip, media.probe_file(freeze_clip)["duration"])
+    assert found and found[0]["kind"] == "freeze"
+    assert found[0]["evidence"]["duration"] >= defects.FREEZE_MIN_SECONDS
+
+
+def test_defects_detects_planted_silence(silence_clip):
+    found = defects.detect_silence(silence_clip, has_audio=True)
+    assert found and found[0]["kind"] == "silence"
+    assert 0.8 <= found[0]["t"] <= 1.2
+    assert found[0]["evidence"]["duration"] >= 0.8
+
+
+def test_defects_detects_non_adjacent_duplicate_shot(duplicate_shot_clip):
+    meta = media.probe_file(duplicate_shot_clip)
+    found = defects.detect_duplicate_shots(duplicate_shot_clip, meta["duration"])
+    assert found and found[0]["kind"] == "duplicate-shot"
+    assert 1.8 <= found[0]["t"] <= 2.2
+    assert found[0]["evidence"]["matched_shot_start"] == pytest.approx(0.0, abs=0.3)
+
+
+def test_defects_detects_planted_pts_gap(pts_gap_clip):
+    found = defects.detect_pts_gaps(pts_gap_clip)
+    assert found and found[0]["kind"] == "pts-gap"
+    assert found[0]["evidence"]["gap"] >= 0.5
+    assert found[0]["evidence"]["expected"] == pytest.approx(1 / 30, abs=0.002)
+
+
+def test_defect_prerequisites_surface_ffmpeg_failure(
+    black_flash_clip, silence_clip, workdir, monkeypatch
+):
+    bad_dir = workdir / "bad_ffmpeg"
+    bad_dir.mkdir(exist_ok=True)
+    bad = bad_dir / "ffmpeg"
+    bad.write_text("#!/bin/sh\necho synthetic-ffmpeg-failure >&2\nexit 7\n")
+    bad.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bad_dir}:{os.environ.get('PATH', '')}")
+    with pytest.raises(util.VidwatchError):
+        defects.detect_duplicate_shots(black_flash_clip, 2.0)
+    with pytest.raises(util.VidwatchError):
+        media.detect_silence(silence_clip, noise_db=-35.0, min_duration=0.5)
+
+
+def test_defects_cli_json_records_are_stable_shape(black_flash_clip, workdir):
+    import json
+    rc = subprocess.run([
+        sys.executable, str(SCRIPTS / "vidwatch.py"), "defects", str(black_flash_clip),
+        "--json",
+    ], capture_output=True, text=True, check=False,
+        env={**os.environ, "VIDWATCH_CACHE": str(workdir / "cache_defects")})
+    assert rc.returncode == 0, rc.stderr
+    data = json.loads(rc.stdout)
+    assert data
+    assert all(set(c) == {"t", "kind", "severity", "evidence"} for c in data)
+    assert any(c["kind"] == "black" for c in data)
