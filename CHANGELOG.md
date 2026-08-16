@@ -1,13 +1,16 @@
 # Changelog
 
+## 2.0.0
+
+- Restored an explicit MIT licence for the project, owned by `louisjournals`.
+- Standardised the current release version on 2.0.0 across skill metadata and changelog.
+
 ## 1.4.0
 
 - Replaced the old bucketed sampling implementation with a new my-vidwatch
   adaptive coverage curve. Sampling now scales continuously with window length,
   focused windows tighten coverage, and explicit `--fps` remains exact.
-- Removed third-party attribution and the MIT LICENSE file after removing the
-  attributed sampling implementation. Current my-vidwatch code is maintained as
-  the project's own implementation.
+- Kept the adaptive sampling implementation entirely within my-vidwatch.
 - Updated tests and documentation to describe the adaptive sampling model.
 
 ## 1.3.0

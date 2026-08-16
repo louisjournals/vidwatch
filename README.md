@@ -60,3 +60,7 @@ Full command reference, measurements and rationale: [SKILL.md](SKILL.md).
 python3 -m pytest tests -q     # 109 tests, clips synthesised with ffmpeg, no network
 ```
 
+## Licence
+
+MIT. See [LICENSE](LICENSE).
+
