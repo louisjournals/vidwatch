@@ -446,8 +446,8 @@ def test_every_model_exposes_max_edge_not_max_width():
         assert not hasattr(m, "max_width"), f"{name} still has the buggy attribute"
 
 
-def test_portrait_frame_is_cheaper_after_the_fix(vertical_clip, workdir):
-    """End to end: a portrait read must not be billed on uncapped height."""
+def test_explicit_portrait_width_is_not_provider_capped(vertical_clip, workdir):
+    """Explicit --width is a caller instruction even when portrait height exceeds a provider edge."""
     import json
     rc = subprocess.run([
         sys.executable, str(SCRIPTS / "vidwatch.py"), "quick", str(vertical_clip),
@@ -457,9 +457,9 @@ def test_portrait_frame_is_cheaper_after_the_fix(vertical_clip, workdir):
     assert rc.returncode == 0, rc.stderr
     data = json.loads(rc.stdout)
     w, h = data["frame_size"]
-    assert max(w, h) <= 1568, f"long edge {max(w, h)} exceeds the cap"
-    uncapped = round(1536 * 2731 / 750)
-    assert data["est_image_tokens"] / len(data["frames"]) < uncapped
+    assert w == 1536
+    assert h > vendors.resolve("anthropic").max_edge
+    assert data["resolution_mode"] == "explicit"
 
 
 # --------------------------------------------------------------- quick path
@@ -745,7 +745,7 @@ def test_sampling_plan_labels_and_explicit_override():
 
 
 def test_budget_guard_warns_without_thinning(slides_clip, workdir, capsys):
-    """The budget is a tripwire now, not a density dial."""
+    """At the managed floor the budget is still only a tripwire, never a density dial."""
     import json
     rc = subprocess.run([
         sys.executable, str(SCRIPTS / "vidwatch.py"), "read", str(slides_clip),
@@ -755,7 +755,43 @@ def test_budget_guard_warns_without_thinning(slides_clip, workdir, capsys):
         env={**os.environ, "VIDWATCH_CACHE": str(workdir / "cache_guard")})
     assert rc.returncode == 0, rc.stderr
     assert "over the 500 budget" in rc.stderr, rc.stderr
-    assert json.loads(rc.stdout)["rate"]["fps"] == 2.0
+    data = json.loads(rc.stdout)
+    assert data["rate"]["fps"] == 2.0
+    assert data["rate"]["target"] == 30, "budget must not reduce frame count"
+    assert data["frame_size"][0] == 384
+    assert data["resolution_mode"] == "managed-floor"
+
+
+def test_default_width_spends_resolution_to_keep_frame_count(slides_clip, workdir):
+    import json
+    rc = subprocess.run([
+        sys.executable, str(SCRIPTS / "vidwatch.py"), "read", str(slides_clip),
+        "--start", "0", "--end", "15", "--fps", "2", "--vendor", "anthropic",
+        "--max-tokens", "5000", "--no-dedup", "--json",
+    ], capture_output=True, text=True, check=False,
+        env={**os.environ, "VIDWATCH_CACHE": str(workdir / "cache_managed_width")})
+    assert rc.returncode == 0, rc.stderr
+    data = json.loads(rc.stdout)
+    assert data["rate"]["target"] == 30
+    assert 384 <= data["frame_size"][0] < 512
+    assert data["resolution_mode"] == "managed"
+    assert data["est_image_tokens"] <= 5000
+
+
+def test_explicit_width_is_exact_even_when_over_budget(slides_clip, workdir):
+    import json
+    rc = subprocess.run([
+        sys.executable, str(SCRIPTS / "vidwatch.py"), "read", str(slides_clip),
+        "--start", "0", "--end", "15", "--fps", "2", "--width", "1024",
+        "--vendor", "anthropic", "--max-tokens", "500", "--no-dedup", "--json",
+    ], capture_output=True, text=True, check=False,
+        env={**os.environ, "VIDWATCH_CACHE": str(workdir / "cache_explicit_width")})
+    assert rc.returncode == 0, rc.stderr
+    data = json.loads(rc.stdout)
+    assert data["frame_size"][0] == 1024, "explicit --width was silently changed"
+    assert data["resolution_mode"] == "explicit"
+    assert data["rate"]["target"] == 30, "budget must not reduce frame count"
+    assert "over the 500 budget" in rc.stderr
 
 
 # ------------------------------------------- B3/A: noise-floor gating

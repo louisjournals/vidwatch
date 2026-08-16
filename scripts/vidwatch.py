@@ -42,6 +42,7 @@ from util import (
 DEFAULT_READ_BUDGET = 20_000
 DEFAULT_SCAN_BUDGET = 3_000
 DEFAULT_WIDTH = 512
+MANAGED_WIDTH_FLOOR = 384
 GUARD_WINDOW_SECONDS = 600.0
 BAR = "=" * 62
 
@@ -140,24 +141,62 @@ def budget_guard(
     )
 
 
-def resolve_frame_size(requested_width: int, meta: dict, model) -> tuple[int, int]:
-    """Requested width -> (width, height) with the LONG edge capped.
-
-    Capping width alone is wrong for portrait sources: a 1080x1920 clip asked
-    for at width 1536 comes out 1536x2731, so the provider downscales it anyway
-    and the token estimate is computed on pixels that never get billed.
-    """
+def frame_size_for_width(width: int, meta: dict) -> tuple[int, int]:
+    """Return an exact requested width and aspect-preserving height."""
     src_w = meta.get("width") or 16
     src_h = meta.get("height") or 9
-    w = max(2, int(requested_width))
+    w = max(2, int(width))
     h = max(2, round(w * src_h / src_w))
-    fit_w, fit_h = vendors.fit_to_edge(w, h, model.max_edge)
-    if (fit_w, fit_h) != (w, h):
-        portrait = " — the long edge here is height, not width" if src_h > src_w else ""
-        warn(f"frame fitted to {fit_w}x{fit_h}: the {model.name} model downscales "
-             f"past {model.max_edge}px on the long edge ({model.note}), so bigger "
-             f"frames cost tokens and buy no detail{portrait}")
-    return fit_w, fit_h
+    return w, h
+
+
+def resolve_read_frame_size(
+    requested_width: int | None,
+    *,
+    frames: int,
+    meta: dict,
+    model,
+    max_tokens: int,
+    fps: float,
+) -> tuple[int, int, str]:
+    """Joint frame x resolution budget without ever changing frame count.
+
+    Explicit --width is a caller instruction, exactly like explicit --fps: keep
+    it even when it exceeds the visual budget and warn. Only the implicit
+    default width is budget-managed. It may shrink from DEFAULT_WIDTH to the
+    provisional MANAGED_WIDTH_FLOOR, never below it; if the floor still exceeds
+    budget we keep every frame and warn rather than silently thinning coverage.
+    """
+    if requested_width is not None:
+        w, h = frame_size_for_width(requested_width, meta)
+        budget_guard(frames, w, h, fps, model, max_tokens)
+        return w, h, "explicit"
+
+    chosen: tuple[int, int] | None = None
+    for candidate in range(DEFAULT_WIDTH, MANAGED_WIDTH_FLOOR - 1, -2):
+        w, h = frame_size_for_width(candidate, meta)
+        if model.tokens(w, h) * frames <= max_tokens:
+            chosen = (w, h)
+            break
+
+    if chosen is None:
+        w, h = frame_size_for_width(MANAGED_WIDTH_FLOOR, meta)
+        budget_guard(frames, w, h, fps, model, max_tokens)
+        warn(
+            f"default frame width reached the provisional {MANAGED_WIDTH_FLOOR}px "
+            "resolution floor; keeping all frames at that floor despite the budget"
+        )
+        return w, h, "managed-floor"
+
+    w, h = chosen
+    if w < DEFAULT_WIDTH:
+        warn(
+            f"default frame width reduced {DEFAULT_WIDTH} -> {w}px so {frames} frames "
+            f"fit the {max_tokens:,} token visual budget ({model.name}); frame count "
+            "was not changed"
+        )
+        return w, h, "managed"
+    return w, h, "default"
 
 
 def motion_profile(cuts_per_min: float) -> tuple[str, str]:
@@ -398,13 +437,15 @@ def cmd_read(args) -> int:
             "narrow window. Pass --force to override if you genuinely want the wide pass."
         )
 
-    width, est_h = resolve_frame_size(args.width, meta, model)
     focused = args.start is not None or args.end is not None
     fps, cap, rate_label = framesmod.sampling_plan(
         window, focused=focused, fps_override=args.fps,
         max_frames=args.max_frames or framesmod.DEFAULT_MAX_FRAMES,
     )
-    budget_guard(cap, width, est_h, fps, model, args.max_tokens)
+    width, est_h, resolution_mode = resolve_read_frame_size(
+        args.width, frames=cap, meta=meta, model=model,
+        max_tokens=args.max_tokens, fps=fps,
+    )
 
     explicit = [parse_ts(t) for t in (args.timestamps or [])]
     explicit = [t for t in explicit if t is not None and start <= t <= end]
@@ -456,6 +497,7 @@ def cmd_read(args) -> int:
             "dedup": stats,
             "frames": [{"t": t, "ts": fmt_ts(t, ms=True), "path": str(p)} for t, p in kept],
             "frame_size": [w, h],
+            "resolution_mode": resolution_mode,
             "vendor": model.name,
             "est_image_tokens": total_tokens,
             "interval_seconds": round(interval, 3),
@@ -551,12 +593,14 @@ def cmd_quick(args) -> int:
     )
 
     start, end = 0.0, duration
-    width, est_h = resolve_frame_size(args.width, meta, model)
     fps, cap, rate_label = framesmod.sampling_plan(
         duration, focused=False, fps_override=args.fps,
         max_frames=args.max_frames or framesmod.DEFAULT_MAX_FRAMES,
     )
-    budget_guard(cap, width, est_h, fps, model, args.max_tokens)
+    width, est_h, resolution_mode = resolve_read_frame_size(
+        args.width, frames=cap, meta=meta, model=model,
+        max_tokens=args.max_tokens, fps=fps,
+    )
 
     times, strategy = framesmod.select_candidates(
         rc, path, mode=args.mode, start=start, end=end, target=cap
@@ -589,6 +633,7 @@ def cmd_quick(args) -> int:
             "cache_key": rc.key, "duration": duration, "strategy": strategy,
             "rate": {"fps": fps, "mode": rate_label, "target": cap},
             "dedup": stats, "vendor": model.name, "frame_size": [w, h],
+            "resolution_mode": resolution_mode,
             "est_image_tokens": total, "interval_seconds": round(interval, 3),
             "frames": [{"t": t, "ts": fmt_ts(t, ms=True), "path": str(p)}
                        for t, p in kept],
@@ -874,9 +919,10 @@ def build_parser() -> argparse.ArgumentParser:
     budgeted(rd)
     rd.add_argument("--start", default=None)
     rd.add_argument("--end", default=None)
-    rd.add_argument("--width", type=int, default=DEFAULT_WIDTH,
-                    help=f"frame width in px (default {DEFAULT_WIDTH}; "
-                         "use 1024 to read on-screen text)")
+    rd.add_argument("--width", type=int, default=None,
+                    help=f"frame width in px; omitted = budget-managed from "
+                         f"{DEFAULT_WIDTH}px down to {MANAGED_WIDTH_FLOOR}px; "
+                         "an explicit value is honoured exactly")
     rd.add_argument("--fps", type=float, default=None,
                     help="force a sampling rate; bypasses the frame cap entirely")
     rd.add_argument("--max-tokens", type=int, default=DEFAULT_READ_BUDGET,
@@ -903,7 +949,9 @@ def build_parser() -> argparse.ArgumentParser:
         "quick", help="single pass for short clips: transcript + dense frames")
     common(qk)
     budgeted(qk)
-    qk.add_argument("--width", type=int, default=DEFAULT_WIDTH)
+    qk.add_argument("--width", type=int, default=None,
+                    help=f"omitted = budget-managed from {DEFAULT_WIDTH}px down to "
+                         f"{MANAGED_WIDTH_FLOOR}px; explicit values are exact")
     qk.add_argument("--fps", type=float, default=None)
     qk.add_argument("--max-tokens", type=int, default=DEFAULT_READ_BUDGET)
     qk.add_argument("--max-frames", type=int, default=None)

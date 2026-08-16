@@ -211,8 +211,8 @@ capability the host provides.
 | Flag | Use |
 |---|---|
 | `--start` / `--end` | `SS`, `MM:SS`, or `HH:MM:SS`. Required in practice. |
-| `--width 1024` | Reading on-screen text: slides, terminals, code, captions. Default 512 answers "what is happening". |
-| `--vendor` | `anthropic`, `openai`, `gemini`, `generic`. Sets the token model behind `--max-tokens`. |
+| `--width 1024` | Reading on-screen text: slides, terminals, code, captions. An explicit width is honoured exactly. If omitted, resolution is budget-managed from 512px down to a provisional 384px floor; frame count is never reduced to fit budget. |
+| `--vendor` | `anthropic`, `openai`, `gemini`, `generic`. Sets the token model behind the joint frame × resolution budget. |
 | `--fps N` | Force a sampling rate. Bypasses the frame cap entirely — a stated rate is honoured on a 30-second clip and a 30-minute one alike. You own the cost. |
 | `--max-tokens N` | Budget **tripwire**, default 20000. Warns and reports the affordable window; never silently widens the interval. |
 | `--max-frames N` | Automatic-sampling frame ceiling, default 100. |
@@ -381,9 +381,13 @@ Tests: `python3 -m pytest tests -q` (clips synthesised with ffmpeg, no network).
 
 ## Token models
 
-Frame count comes from the sampling plan, while `--max-tokens` is a warning
-tripwire. Its estimate is only meaningful if the cost model matches the host
-reading the frames. Providers do not agree:
+Frame count comes from the sampling plan and is never reduced by the visual
+budget. With no explicit `--width`, frames and per-frame resolution share
+`--max-tokens`: resolution may fall from 512px to the provisional 384px floor.
+An explicit `--width` is exact; if either an explicit width or the 384px floor
+still exceeds budget, the tool warns and proceeds at full frame count. The
+estimate is only meaningful if the cost model matches the host reading the
+frames. Providers do not agree:
 
 | Frame | anthropic | openai | gemini |
 |---|---|---|---|
@@ -392,9 +396,9 @@ reading the frames. Providers do not agree:
 
 Selection order is `--vendor`, then `$VIDWATCH_VENDOR`, then `generic`. The
 generic model takes the highest estimate at every size, so an unconfigured host
-under-fills its budget rather than overspending. `--width` is also capped per
-model, since every provider downscales past some point and extra pixels then cost
-tokens for no detail.
+uses the most conservative resolution budget. Explicit `--width` is never
+silently changed; provider-side resizing remains the provider's behaviour, not a
+reason for my-vidwatch to override the caller.
 
 These are documented estimates, not billing. Providers resize server-side and
 revise tokenizers between versions; check your host's own counter if exact cost
@@ -411,6 +415,20 @@ was measured on this code, not assumed.
 video" pipeline spends its budget before it knows where the answer is. On a
 50-minute video a 100-frame cap is one frame every ~30 seconds, which is
 decorative. Probe is free and usually narrows the question by itself.
+
+**Joint frame × resolution budget.** Frame count is coverage and is never spent
+as the budget control. When `--width` is omitted, the default 512px width may be
+reduced until the selected vendor's full frame set fits `--max-tokens`, stopping
+at **384px**. That 384px floor is **provisional**, not a measured legibility
+threshold. Explicit `--width` is a caller instruction and is honoured exactly;
+if it or the managed 384px floor is still over budget, warn and keep all frames.
+
+TODO: measure the real resolution floor on 9:16 footage with burned-in captions.
+The nearby ~512px caption-legibility statement in the extract section was not
+measured to Design-notes standard. On 9:16 video `--width` is the narrow edge,
+so a frame has roughly **3.15×** the pixels of 16:9 landscape at the same width;
+the floor must be calibrated on portrait footage rather than inferred from
+landscape.
 
 **Dedup scores the loudest tile, not the whole frame.** A whole-frame mean
 difference cannot see a localised change. Measured on macOS 15 / ffmpeg 7.1.1
