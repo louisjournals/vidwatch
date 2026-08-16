@@ -536,22 +536,22 @@ def test_gemini_flat_rate_only_under_384():
     assert m.tokens(800, 400) == 2 * 258
 
 
-def test_qwen_models_use_provisional_28_grid_and_image_floor():
+def test_qwen_models_use_provisional_32_grid_without_active_floor():
     image = vendors.resolve("qwen")
     video = vendors.resolve("qwen:video")
-    # Owner-specified provisional model: 512x288 -> 504x280 -> 18x10.
-    assert vendors._qwen_spatial_tokens(512, 288) == 180
-    assert image.tokens(512, 288) == 256, "image min_pixels floor applies"
-    assert video.tokens(512, 288) == 90
-    assert image.tokens(1024, 576) == 777
-    assert video.tokens(1024, 576) == 389
-    assert vendors.resolve("qwen3-vl").tokens(512, 288) == 256
+    # Qwen3-VL processor: patch_size 16 x merge_size 2 => /32 merged grid.
+    assert vendors._qwen_spatial_tokens(512, 288) == 144
+    assert image.tokens(512, 288) == 144
+    assert video.tokens(512, 288) == 72
+    assert image.tokens(1024, 576) == 576
+    assert video.tokens(1024, 576) == 288
+    assert vendors.resolve("qwen3-vl").tokens(512, 288) == 144
 
 
-def test_qwen_rounds_to_nearest_28_before_counting():
-    assert vendors._round_to_factor(512, 28) == 504
-    assert vendors._round_to_factor(288, 28) == 280
-    assert vendors._round_to_factor(1024, 28) == 1036
+def test_qwen_rounds_to_nearest_32_before_counting():
+    assert vendors._round_to_factor(512, 32) == 512
+    assert vendors._round_to_factor(288, 32) == 288
+    assert vendors._round_to_factor(1000, 32) == 992
 
 
 def test_qwen_video_is_opt_in_and_cheaper_than_image_path():
@@ -1482,13 +1482,30 @@ def pts_gap_clip(workdir):
     return out
 
 
-def test_defects_detects_planted_black_flash_and_luma_spike(black_flash_clip):
+@pytest.fixture(scope="session")
+def clean_defect_clip(workdir):
+    """Continuously moving picture + continuous tone, with no planted defect."""
+    out = workdir / "clean_defects.mp4"
+    if not out.exists():
+        subprocess.run([
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", "testsrc2=s=320x180:r=30:d=4",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=4",
+            "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-shortest", str(out),
+        ], check=True)
+    return out
+
+
+def test_defects_merges_one_planted_flash_into_one_event_candidate(black_flash_clip):
     meta = media.probe_file(black_flash_clip)
     found = defects.locate(black_flash_clip, meta)
-    black = [c for c in found if c["kind"] == "black"]
-    luma = [c for c in found if c["kind"] == "luma-spike"]
-    assert black and 0.85 <= black[0]["t"] <= 1.1
-    assert luma and any(0.85 <= c["t"] <= 1.1 for c in luma)
+    events = [c for c in found if 0.85 <= c["t"] <= 1.1]
+    assert len(events) == 1, events
+    event = events[0]
+    assert "hits" in event["evidence"], event
+    kinds = {h["kind"] for h in event["evidence"]["hits"]}
+    assert {"black", "luma-spike"} <= kinds
 
 
 def test_defects_detects_planted_freeze(freeze_clip):
@@ -1519,6 +1536,11 @@ def test_defects_detects_planted_pts_gap(pts_gap_clip):
     assert found[0]["evidence"]["expected"] == pytest.approx(1 / 30, abs=0.002)
 
 
+def test_defects_clean_footage_returns_zero_candidates(clean_defect_clip):
+    meta = media.probe_file(clean_defect_clip)
+    assert defects.locate(clean_defect_clip, meta) == []
+
+
 def test_defect_prerequisites_surface_ffmpeg_failure(
     black_flash_clip, silence_clip, workdir, monkeypatch
 ):
@@ -1545,7 +1567,7 @@ def test_defects_cli_json_records_are_stable_shape(black_flash_clip, workdir):
     data = json.loads(rc.stdout)
     assert data
     assert all(set(c) == {"t", "kind", "severity", "evidence"} for c in data)
-    assert any(c["kind"] == "black" for c in data)
+    assert any("black" in c["kind"].split("+") for c in data)
 
 
 # ------------------------------------------------ Phase 6: burst evidence + Qwen

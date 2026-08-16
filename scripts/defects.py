@@ -33,6 +33,7 @@ PTS_GAP_FACTOR = 3.0
 PTS_GAP_MIN_SECONDS = 0.10
 DUPLICATE_SHOT_THRESHOLD = 2.0
 DUPLICATE_CUT_SAMPLE_SECONDS = 0.25
+MERGE_WINDOW_SECONDS = 0.25
 
 _BLACK_RE = re.compile(
     rb"black_start:(-?[0-9.]+)\s+black_end:(-?[0-9.]+)\s+black_duration:([0-9.]+)"
@@ -261,8 +262,61 @@ def detect_duplicate_shots(media_path: Path, duration: float) -> list[dict]:
     return out
 
 
+_SEVERITY_RANK = {"low": 0, "medium": 1, "high": 2}
+
+
+def merge_candidates(candidates: list[dict], *, window: float = MERGE_WINDOW_SECONDS) -> list[dict]:
+    """Collapse detector hits from one physical event into one burst candidate.
+
+    Clusters are anchored to the first hit, so a chain of nearby hits cannot grow
+    beyond the merge window and accidentally fuse separate events.
+    """
+    ordered = sorted(candidates, key=lambda c: (c["t"], c["kind"]))
+    if not ordered:
+        return []
+
+    clusters: list[list[dict]] = []
+    current = [ordered[0]]
+    anchor = float(ordered[0]["t"])
+    for hit in ordered[1:]:
+        if float(hit["t"]) - anchor <= window + 1e-9:
+            current.append(hit)
+        else:
+            clusters.append(current)
+            current = [hit]
+            anchor = float(hit["t"])
+    clusters.append(current)
+
+    merged: list[dict] = []
+    for hits in clusters:
+        if len(hits) == 1:
+            merged.append(hits[0])
+            continue
+        kinds = sorted({str(h["kind"]) for h in hits})
+        severity = max(
+            (str(h.get("severity", "low")) for h in hits),
+            key=lambda s: _SEVERITY_RANK.get(s, -1),
+        )
+        merged.append(_candidate(
+            min(float(h["t"]) for h in hits),
+            "+".join(kinds),
+            severity,
+            {
+                "merge_window": window,
+                "hits": [
+                    {
+                        "t": h["t"], "kind": h["kind"],
+                        "severity": h["severity"], "evidence": h["evidence"],
+                    }
+                    for h in hits
+                ],
+            },
+        ))
+    return merged
+
+
 def locate(media_path: Path, meta: dict) -> list[dict]:
-    """Run every deterministic detector and return timestamp-sorted candidates."""
+    """Run every deterministic detector and return merged event candidates."""
     duration = float(meta.get("duration") or 0.0)
     candidates = []
     candidates.extend(detect_black(media_path))
@@ -271,4 +325,4 @@ def locate(media_path: Path, meta: dict) -> list[dict]:
     candidates.extend(detect_luma_spikes(media_path))
     candidates.extend(detect_pts_gaps(media_path))
     candidates.extend(detect_duplicate_shots(media_path, duration))
-    return sorted(candidates, key=lambda c: (c["t"], c["kind"]))
+    return merge_candidates(candidates)

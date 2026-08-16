@@ -16,16 +16,20 @@
   rather than silently downscale or thin.
 - Added the zero-image-token `defects` locator for black flashes, freezes, audio
   silence, luma edges, PTS gaps and duplicate shots, reusing the existing
-  content-change/transition confirmation and tile-wise comparison paths.
+  content-change/transition confirmation and tile-wise comparison paths. Detector
+  hits within 0.25s are merged into one event candidate so burst evidence runs once
+  per physical event.
 - Added `read --candidates` burst evidence collection. Candidate and explicit
   timestamps sit outside the automatic frame ceiling and survive dedup; JSON frame
   records now include `scene_id`, adjacent `change_score`, and nearest transcript
   line.
-- Added provisional `qwen` and `qwen:video` token models using the owner-selected
-  /28 compatibility assumption. `qwen` assumes a 256-token host-side image floor;
-  `qwen:video` applies 2x temporal grouping and is opt-in because irregularly
-  sampled JPEGs can carry false timing if a host turns them into a uniform video
-  sequence. Qwen figures remain derived pending API-reported usage calibration.
+- Added provisional `qwen` and `qwen:video` token models using the Qwen3-VL
+  processor's /32 merged spatial grid (`patch_size=16`, `merge_size=2`). 512x288
+  prices at 144 image tokens or 72/frame as a true video sequence; no extra floor
+  is applied because the processor's shortest-edge floor sits below normal
+  my-vidwatch widths. `qwen:video` remains opt-in because irregularly sampled JPEGs
+  can carry false timing if a host turns them into a uniform video sequence. Qwen
+  figures remain derived pending API-reported usage calibration.
 - Reconciled documentation: `extract` is the primary handoff command, Whisper's
   default is stated once and matches `tx.DEFAULT_MODEL`, Rules are numbered in
   order, the sampling table matches the current planner, and README command/test

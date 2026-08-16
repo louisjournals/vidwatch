@@ -447,16 +447,15 @@ so a frame has roughly **3.15×** the pixels of 16:9 landscape at the same width
 the floor must be calibrated on portrait footage rather than inferred from
 landscape.
 
-**Qwen token estimates are provisional.** The current model follows the owner's
-/28 compatibility assumption: round each dimension to the nearest multiple of
-28, then count the resulting grid. Thus 512x288 -> 504x280 -> 18x10 = 180 raw
-spatial tokens. `qwen` is the conservative image-path model and assumes a
-host-side `min_pixels` floor equivalent to 256 visual tokens, so small frames are
-not discounted below 256. `qwen:video` is opt-in and applies 2x temporal grouping
-to the raw spatial count, giving 90 tokens/frame for that 512x288 example. These
-figures are **derived, not measured**, and upstream Qwen3-VL configuration is not
-fully consistent across published processor/config surfaces. TODO: verify both
-models against API-reported usage before promoting any Qwen number to measured.
+**Qwen token estimates are provisional.** The current model follows the
+Qwen3-VL processor configuration: `patch_size=16` with `merge_size=2`, giving a
+/32 merged spatial grid after processor alignment. Thus 512x288 -> 16x9 = 144
+spatial tokens for `qwen` image-path input. `qwen:video` is opt-in and applies 2x
+temporal grouping, giving 72 tokens/frame for that same example. The processor's
+`shortest_edge=65536` floor is only 64 merged visual tokens, below every width
+my-vidwatch normally emits, so no additional image-token floor is applied here.
+These figures are **derived, not measured**. TODO: verify both models against
+API-reported usage before treating the estimates as calibrated.
 
 `qwen:video` also has a semantic warning unrelated to token maths: scene-mode
 sampling and dedup produce **irregularly spaced frames**. Feeding those JPEGs to
@@ -483,7 +482,9 @@ measured a tile delta of 0.0. The module constants are therefore: blackdetect
 silencedetect `noise=-35dB`, `d=0.50`; luma edge >=40 YAVG points; PTS gap >
 `max(0.10s, 3x median cadence)`; duplicate-shot tile delta <=2.0. Duplicate-shot
 boundaries are found with the existing `content_changes` + `confirm_transitions`
-path at 0.25s sampling, then compared with the existing tile-wise score.
+path at 0.25s sampling, then compared with the existing tile-wise score. Detector
+hits whose timestamps fall within a 0.25s anchored merge window collapse into one
+event candidate so one physical defect produces one burst-evidence request.
 
 **Dedup scores the loudest tile, not the whole frame.** A whole-frame mean
 difference cannot see a localised change. Measured on macOS 15 / ffmpeg 7.1.1

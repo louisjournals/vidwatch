@@ -21,13 +21,12 @@ from 1568 to 2576.
 Gemini charges a flat 258 when BOTH sides are at most 384, and otherwise tiles
 at 768 and charges 258 per tile.
 
-Qwen estimates are provisional. This repo currently models the owner's /28
-compatibility assumption: dimensions are rounded to the nearest multiple of 28,
-then counted on that grid. The conservative image model also assumes the common
-host-side 256-token min_pixels floor; the video-sequence model applies 2x
-temporal grouping to the spatial count. Current upstream Qwen3-VL configs are
-not fully consistent with that assumption, so API-reported usage must calibrate
-these figures before they are treated as measured.
+Qwen estimates are provisional. The current model uses the Qwen3-VL processor's
+16px patch size with 2x spatial merge, i.e. a /32 merged grid after processor
+alignment. The video-sequence model then applies 2x temporal grouping. The
+processor's shortest-edge floor is below every my-vidwatch width in normal use,
+so this estimator does not impose an additional image-token floor. API-reported
+usage must still calibrate these derived figures.
 
 The uncapped case matters
 -------------------------
@@ -169,12 +168,11 @@ class Gemini(TokenModel):
 
 # ----------------------------------------------------------------------- Qwen
 
-QWEN_FACTOR = 28
-QWEN_IMAGE_MIN_TOKENS = 256
+QWEN_FACTOR = 32
 
 
 def _round_to_factor(value: int, factor: int) -> int:
-    """Nearest positive factor multiple; 512 -> 504 and 288 -> 280 at /28."""
+    """Nearest positive factor multiple; Qwen's processor aligns dimensions."""
     return max(factor, int(math.floor(value / factor + 0.5)) * factor)
 
 
@@ -185,22 +183,22 @@ def _qwen_spatial_tokens(width: int, height: int) -> int:
 
 
 class QwenImage(TokenModel):
-    """Provisional Qwen image estimate on a /28 grid with a 256-token floor."""
+    """Provisional Qwen image estimate on the processor's /32 merged grid."""
 
     name = "qwen"
     max_edge = None
-    note = "provisional /28 image grid; assumes host-side 256-token min_pixels floor"
+    note = "provisional /32 image grid; no active min-pixel floor at my-vidwatch widths"
 
     def tokens(self, width: int, height: int) -> int:
-        return max(QWEN_IMAGE_MIN_TOKENS, _qwen_spatial_tokens(width, height))
+        return _qwen_spatial_tokens(width, height)
 
 
 class QwenVideo(TokenModel):
-    """Provisional Qwen video-sequence average: /28 spatial grid, 2x temporal."""
+    """Provisional Qwen video-sequence average: /32 spatial grid, 2x temporal."""
 
     name = "qwen:video"
     max_edge = None
-    note = "provisional /28 spatial grid + 2x temporal grouping; only for true video-sequence input"
+    note = "provisional /32 spatial grid + 2x temporal grouping; only for true video-sequence input"
     TEMPORAL = 2
 
     def tokens(self, width: int, height: int) -> int:
