@@ -361,9 +361,18 @@ def render_transcript(segments: list[dict]) -> str:
     return "\n".join(f"[{fmt_ts(s['start'])}] {s['text']}" for s in segments)
 
 
+def analysis_references(intent: str | None) -> list[str]:
+    """References the analysis layer may load for a declared distribution intent."""
+    refs = ["references/shared.md"]
+    if intent in ("paid", "organic"):
+        refs.append(f"references/{intent}.md")
+    return refs
+
+
 def build_brief(
     *,
     goal: str = "",
+    intent: str | None = None,
     meta: dict,
     duration: float,
     shots: list[dict],
@@ -387,6 +396,21 @@ def build_brief(
     L.append(f"- Transcript source: `{transcript.get('source')}`")
     L.append(f"- Shots reported: {pacing.get('count', 0)} (method: {cut_method})")
     L.append(f"- Images attached: {len(frame_files)}, evenly spaced across the clip")
+    L.append(f"- Intent: **{intent if intent else 'not declared'}**")
+    refs = analysis_references(intent)
+    L.append("- Analysis references: " + " + ".join(f"`{r}`" for r in refs))
+    L.append("")
+    L.append("## Distribution intent")
+    L.append("")
+    if intent:
+        L.append(f"The caller explicitly declared **{intent}**. Treat this as a")
+        L.append("distribution-side fact supplied by the owner/caller, not something")
+        L.append("inferred from the footage. Load only the reference bundle above.")
+    else:
+        L.append("**Intent not declared.** The analysis layer must ask whether this")
+        L.append("distribution is `paid` or `organic` before loading an intent-specific")
+        L.append("reference or making intent-specific recommendations. Do not infer")
+        L.append("intent from the footage, CTA, brand presence, polish, platform or topic.")
     L.append("")
     if goal:
         L.append("## What the owner asked for")

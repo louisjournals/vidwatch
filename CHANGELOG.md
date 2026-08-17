@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.0
+
+- **A — explicit distribution intent:** `extract` accepts only `--intent paid|organic`, records the caller-declared value in `brief.md`, and writes `intent not declared` when omitted. The CLI never infers distribution intent; undeclared briefs require the analysis layer to ask before loading intent-specific strategy.
+- **B — split analysis references:** replaced the monolithic paid reference with `references/shared.md`, `references/paid.md`, and `references/organic.md`. Every analysis loads shared plus exactly one declared intent layer. The four brief-reading landmines now live in shared so Whisper hallucination, shot-count uncertainty, unreliable transcript names, and picture-vs-asset resolution limits apply to both paths.
+- **C — shared retention architecture:** moved frame-0/first-1.5s/retention methods into shared, added beat-boundary retention debt (`unsupported / total` plus first failure runtime percentage), hook-to-body gear-shift review, shot-length distribution, and language-aware on-screen text reading load. Paid and organic now share the first three score axes: Frame 0 + Hook, Retention, Payoff + Proof.
+- **D — platform-claim cleanup:** removed ranking-weight, traffic-share and benchmark-percentage logic. Platform behavior is expressed as observable questions and grounded only in official sources or dated observable UI facts. Meta sound/caption guidance, TikTok placement/disclosure specs, Douyin favorite behavior without a published weight, Xiaohongshu's two-column browse surface, and TikTok/Douyin product separation are documented with source dates.
+- **E — strategist consolidation:** retired `my-content-strategist` in favor of `my-vidwatch --intent organic`, added skill-scoped platform-source rules to `AGENTS.md`, and updated the audit brief to reflect the integrated evidence-to-judgment role.
+
 ## 2.0.0
 
 - Restored the project MIT licence (`Copyright (c) 2026 louisjournals`) and

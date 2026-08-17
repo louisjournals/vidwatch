@@ -1,43 +1,109 @@
 ---
 name: my-vidwatch
 description: >
-  Watch a video — local file or URL — and answer questions grounded in what is
-  actually on screen and in the audio. Use for any request to watch, review,
-  summarise, or locate a moment in a video, screen recording, reel, talk or
-  lecture: "what hook did this open with", "when does the UI break in this
-  recording", "summarise this talk", "what's on screen at 2:30", "find the part
-  where they mention pricing". Works on .mp4/.mov/.mkv/.webm and any URL yt-dlp
-  supports (YouTube, TikTok, Instagram, Loom, X, Vimeo). Host-agnostic: runs on
-  any agent that can execute a shell command and read an image file.
-  Transcription runs locally via whisper.cpp — no API keys, no audio egress.
+  Use when a video, reel, paid ad, organic short-form post, screen recording,
+  talk, lecture, local media file, or supported video URL must be watched,
+  scanned, reviewed, summarised, diagnosed, compared, or answered from actual
+  visual/audio evidence, including paid/organic creative strategy, recut analysis,
+  hook and retention review, pacing, defects, and locating exact moments.
 argument-hint: "<video-url-or-path> [question]"
 allowed-tools: Bash, Read
 user-invocable: true
-version: 2.0.0
+version: 2.2.0
 license: MIT
 ---
 
 # my-vidwatch
 
-**Any question about a video — hooks, pacing, structure, strategy, "why did this
-work" — starts with `extract`. There is no other analysis command.**
+One skill owns the whole evidence-to-judgment loop. **Do not stop after extracting
+frames and a brief when the user asked for a full scan, review, teardown, or
+analysis.** The scan is evidence collection; the job is not done until the
+context and analyst report are written.
+
+## Choose the path
+
+### A — Targeted question
+
+Use this when the user asks one narrow thing such as "what happens at 2:30",
+"what hook did this open with", "find the UI bug", or "what did they say about
+pricing".
+
+- Under ~3 minutes: use `quick`.
+- Longer video: `probe` first, then `scan` only when location is unknown, then a
+  narrow `read` when visual detail is needed.
+- Answer the question directly from the evidence.
+- Do **not** force `video-context.md` or `analyst-report.md` for a narrow question
+  unless the user also asked for a full analysis.
+
+### B — Full scan / review / teardown / short-form analysis
+
+Use this when the user asks to scan, watch, review, analyse, teardown, audit,
+compare, or strategise around a whole video, or invokes `my-vidwatch` with a video
+but no narrow question. Paid and organic strategy use the same evidence pass but
+**different declared distribution intents**.
+
+1. Run `extract`.
+2. Read the generated `brief.md` **and every contact sheet/frame artifact**. A
+   transcript or brief alone is not enough for visual claims.
+3. Write `video-context.md` in the same handoff folder.
+4. Write `analyst-report.md` in the same handoff folder.
+5. Surface `brief.md`, `video-context.md`, `analyst-report.md`, and the visual
+   evidence files in the chat. Do not tell the owner to paste/upload them into
+   another model as the normal next step.
 
 ```bash
-python3 SCRIPTS/vidwatch.py extract "<url-or-path>"
+python3 SCRIPTS/vidwatch.py extract "<url-or-path>" \
+  --goal "<owner goal, or default full video context + analyst report>" \
+  [--intent paid|organic]
 ```
 
-Produces a handoff folder — `brief.md` plus a few contact sheets — for cases
-where the judgement happens somewhere else: a chat window, a smarter model, or
-the owner reading it themselves.
+If the owner already stated a goal, pass it to `--goal` verbatim. If they did
+**not** state one, do **not** stop to ask: use `full video context + analyst
+report` as the default goal and proceed.
 
-**After running it you MUST surface both artifacts in the chat, ready to
-download.** Attach or link `brief.md` and every file in `frames/`. Printing the
-output path is not enough: the person then has to go dig through Finder, and the
-whole point of this stage is that they hand the files onward immediately. If the
-host cannot attach files, print the absolute path of each one on its own line so
-they are one click from opening.
+`--intent` is different: pass it **only when the owner/caller has explicitly said
+paid or organic**. The CLI records that fact and never infers it. If it was not
+declared, `brief.md` says `intent not declared`; before intent-specific analysis,
+ask the owner. After they answer, rerun the cached `extract` with that explicit
+`--intent` so the brief becomes the durable record.
 
-Then say what to do with them: paste `brief.md`, upload the sheets.
+### Required full-scan outputs
+
+`video-context.md` is the evidence record. Keep fact and inference separate. It
+must cover, when observable:
+
+- source metadata, duration, aspect/resolution, sampling/coverage
+- what the video is doing and its apparent objective/audience
+- timestamped scene/shot/timeline map and major state changes
+- speech/VO summary plus transcript reliability warnings
+- on-screen text, brand/product/model names verified from frames rather than
+  trusted from Whisper alone
+- people, setting, product/service, actions, offers, proof, CTA and conversion
+  path actually visible/audible
+- hook/opening mechanics, strongest proof timestamp, and for ads the proof's
+  first-appearance percentage of runtime
+- material usability: low resolution, burned-in text, watermarks, subtitle
+  obstruction, obvious defects, reusable VO, and uncertain/missing evidence
+- concise key timestamps for later editing or review
+
+`analyst-report.md` is the judgment layer. It must answer the owner's stated goal
+using the evidence in `video-context.md` plus the frames. Be direct and specific;
+do not reprint the transcript.
+
+**Reference loading is intent-gated.** Always read `references/shared.md`, then
+load exactly one intent reference named by `brief.md`:
+
+- `paid` → `references/shared.md` + `references/paid.md`
+- `organic` → `references/shared.md` + `references/organic.md`
+- `not declared` → shared only, then **ask the owner** before continuing; never
+  infer intent from the footage, CTA, brand presence, polish, platform or topic.
+
+Do not load all three references “just in case”. The first three score axes and all
+evidence landmines live in shared; paid/organic add only the distribution-specific
+judgment layer. No performance data means the diagnosis is a hypothesis; never
+invent ranking weights, traffic shares or universal benchmarks.
+
+Write both files in the owner's language unless they requested another language.
 
 ### Acquisition fallback for URLs
 
@@ -58,37 +124,12 @@ rendered UI, captions, overlays, or app/player behavior included in the analysis
 Do not start screen recording without the owner's explicit choice after the
 failure.
 
-Offering your own read afterwards is fine and often useful — just do it **in
-addition, never instead of** attaching the files. If you do, flag it as
-provisional: `brief.md`'s findings each carry a `Check:` line, so a view formed
-from the brief alone rests on less evidence than a reader looking at the sheets
-will have.
-
 **One flag to set, the rest to leave alone.**
 
-```bash
-python3 SCRIPTS/vidwatch.py extract "<url-or-path>" \
-  --goal "what the owner told you they want from this"
-```
-
-**`--goal` is required in practice. Ask for it before running.** If the owner has
-not said what the teardown is for, ask — one question, then run. Their answer
-goes into `--goal` verbatim, in their words, not your paraphrase.
-
-This exists because the reader on the other end otherwise closes with "shall I
-write the shot list?" or "do you want a recut or a reshoot?" — pushing the
-decision back to someone who already stated it to you. The goal travels with the
-files so it only has to be said once.
-
-Include what they told you: the platform, the target length, whether they are
-recutting existing footage or planning a reshoot, what they are optimising for,
-anything they said about their audience. More context beats less; this field has
-no length limit.
-
-- **Do NOT pass `--out`.** Output belongs in `~/Downloads/<clip>-handoff/`,
-  where the owner already looks for files to forward. A session or working
-  directory is the wrong place: they cannot find it, and the whole point of this
-  stage is that the files get handed onward within seconds.
+- **Do NOT pass `--out`.** Output belongs in `~/Downloads/<clip>-handoff/` so
+  `brief.md`, visual evidence, `video-context.md`, and `analyst-report.md` stay
+  together in one predictable place. A session or working directory is the wrong
+  place because the owner cannot reliably find or reopen the finished evidence.
 - **Do NOT pass `--whisper-model` unless the owner is intentionally overriding
   transcription quality/cost.** Leave the CLI default unchanged for normal runs.
 - **Do NOT pass `--frames` or `--grid`.** For `extract`, the default derives the
@@ -103,18 +144,18 @@ at 540px per tile. Chat interfaces handle many attachments badly, so the layout
 keeps each tile useful while limiting upload count. Adjust with `--frames`,
 `--grid COLS ROWS`, or `--layout frames` for one file per moment.
 
-**Short clip (under ~3 minutes)? Use `quick` and stop reading.** One pass,
-transcript plus dense frames. Staging exists to stop a long video eating the
-budget before you know where to look; under a few minutes that reasoning
-inverts and three calls to cover 30 seconds is pure overhead.
+**Targeted question on a short clip (under ~3 minutes)? Use `quick` and stop.**
+One pass, transcript plus dense frames. This shortcut belongs to **Path A only**.
+A full scan/review in **Path B still uses `extract` regardless of duration** so it
+can create the evidence bundle and the two required reports.
 
 ```
 quick   short clips: transcript + dense frames      one call
 ```
 
-Anything longer goes through three stages, cheapest first. **Always start with
-`probe`** — it costs no image tokens and usually answers the question outright or
-narrows it to a 30-second window.
+A targeted question on anything longer goes through three stages, cheapest
+first. **Always start with `probe`** — it costs no image tokens and usually
+answers the question outright or narrows it to a 30-second window.
 
 ```
 probe   metadata + transcript + motion profile      0 image tokens
@@ -130,19 +171,21 @@ command and open a JPEG can drive this — no host-specific tooling required.
 
 ## Rules
 
-1. **Under ~3 minutes, use `quick`.** It refuses anything longer and points you
-   at the staged path, so you cannot get this wrong by accident.
-2. **Never skip `probe` on a long video.** Reading frames first spends the budget
-   before you know where the answer is.
+1. **Path A only: under ~3 minutes, use `quick`.** Path B full analysis uses
+   `extract` at every duration because it must produce the evidence bundle and
+   reports.
+2. **Path A only: never skip `probe` on a long video.** Reading frames first
+   spends the budget before you know where the answer is.
 3. **Never `read` a window wider than 10 minutes.** The tool refuses by design.
    `scan` first, then read the window that matters. `--force` overrides it, but
    the result is a sampling interval too coarse to be worth the tokens.
 4. **Frames are samples, not the video.** If the reported interval is over ~2s,
    never say something is absent from the video — only that it is absent from
    the frames you saw. `read` prints the interval; quote it when it matters.
-5. **Stop when the transcript is enough.** Summaries, quotes and "what did they
-   say about X" almost never need frames. Reading 100 images to answer a question
-   the captions already answered is the most common way to waste a budget here.
+5. **Path A: stop when the transcript is enough.** Summaries, quotes and "what
+   did they say about X" almost never need frames. **Path B is different:** a full
+   context/report pass must inspect the extracted visual evidence before making
+   visual, material-usability, proof, hook, or CTA judgments.
 6. **Set the token model once.** Export `VIDWATCH_VENDOR` to match the host, or
    pass `--vendor`. Without it the budget uses conservative worst-case costs.
 7. **Do not clean up.** Media stays cached on purpose so follow-ups are instant.

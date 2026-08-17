@@ -1,18 +1,19 @@
 # my-vidwatch — audit brief
 
-**Repo:** `~/.agents/skills/my-vidwatch` · **Version:** 2.0.0 · MIT
+**Repo:** `~/.agents/skills/my-vidwatch` · **Version:** 2.2.0 · MIT
 
 ## What this is
 
-An agent skill that lets any host agent watch a video and answer questions grounded in
-on-screen content and audio. It is a **frame server, not an analysis engine**: it extracts
-frames and hands paths to whatever host is reading them. That is why per-vendor token
-models exist.
+An agent skill that owns the evidence-to-judgment loop for video. The local CLI remains a
+host-agnostic evidence engine — metadata, transcript, frames, defects and `brief.md` — and
+the skill now also carries the shared plus paid/organic analysis references used by the
+host to produce `video-context.md` and `analyst-report.md`. Distribution intent is an
+explicit caller fact (`paid` or `organic`), never inferred from pixels.
 
-`vidwatch.py` (~980 lines) is a thin CLI over sibling modules: `cache`, `dedup`, `frames`,
-`media`, `teardown`, `transcript`, `vendors`, `util`.
+`vidwatch.py` is a thin CLI over sibling modules including `cache`, `dedup`, `defects`,
+`frames`, `media`, `teardown`, `transcript`, `vendors`, and `util`.
 
-Commands: `quick` · `probe` · `scan` · `read` · `extract` · `cache`
+Commands: `quick` · `probe` · `defects` · `scan` · `read` · `extract` · `cache`
 
 **Hard constraints.** Python stdlib only. No API keys, no outbound model calls, no audio
 egress. `ffmpeg`/`ffprobe` required; `yt-dlp` and `whisper.cpp` optional. Host-agnostic —

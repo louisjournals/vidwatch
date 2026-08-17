@@ -989,6 +989,60 @@ def test_density_reports_raw_and_clustered(slides_clip):
     assert d["raw_cuts"] >= d["total_cuts"]
 
 
+# ------------------------------------------ intent + analysis references
+
+
+def _minimal_brief(intent=None):
+    return td.build_brief(
+        goal="review",
+        intent=intent,
+        meta={"source": "clip.mp4", "width": 1080, "height": 1920, "fps": 30},
+        duration=10.0,
+        shots=[],
+        pacing={"count": 0},
+        gaps=[],
+        density=0.0,
+        transcript={"source": "none", "segments": []},
+        cut_method="none",
+        frame_files=[],
+    )
+
+
+@pytest.mark.parametrize("intent", ["paid", "organic"])
+def test_brief_records_declared_intent_and_only_matching_reference(intent):
+    brief = _minimal_brief(intent)
+    other = "organic" if intent == "paid" else "paid"
+    assert f"Intent: **{intent}**" in brief
+    assert "`references/shared.md`" in brief
+    assert f"`references/{intent}.md`" in brief
+    assert f"`references/{other}.md`" not in brief
+    assert td.analysis_references(intent) == [
+        "references/shared.md", f"references/{intent}.md"
+    ]
+
+
+def test_brief_without_intent_never_infers_distribution_mode():
+    brief = _minimal_brief()
+    assert "Intent: **not declared**" in brief
+    assert "must ask whether this" in brief
+    assert "Do not infer" in brief
+    assert "`references/shared.md`" in brief
+    assert "`references/paid.md`" not in brief
+    assert "`references/organic.md`" not in brief
+    assert td.analysis_references(None) == ["references/shared.md"]
+
+
+def test_shared_reference_contains_all_four_landmines():
+    shared = (SCRIPTS.parent / "references" / "shared.md").read_text(encoding="utf-8")
+    for marker in (
+        "Whisper can hallucinate speech",
+        "Shot count is an upper bound",
+        "Names are the least trustworthy transcript tokens",
+        "Frame size constrains picture reuse",
+    ):
+        assert marker in shared
+
+
 # ----------------------------------------------------- teardown (timeline)
 
 # Ground truth from a human+agent review of a real 79.3s vertical ad. The
@@ -1245,9 +1299,8 @@ def test_grid_option_changes_sheet_count(vertical_clip, workdir, tmp_path):
 
 def test_extract_output_lists_every_file_for_attaching(vertical_clip, workdir,
                                                        tmp_path):
-    """Two real runs showed an agent reading brief.md and writing its own
-    teardown instead of handing the files over. The instruction lives in the
-    command output because that is the one thing an agent always reads."""
+    """The command output must list every evidence path and tell the current host
+    to read it before continuing the integrated analysis."""
     out = tmp_path / "handoff_required"
     rc = subprocess.run([
         sys.executable, str(SCRIPTS / "vidwatch.py"), "extract",
@@ -1261,7 +1314,8 @@ def test_extract_output_lists_every_file_for_attaching(vertical_clip, workdir,
     for sheet in sorted((out / "frames").glob("*.jpg")):
         assert str(sheet) in txt, f"{sheet.name} path not printed"
     assert "must not be skipped" in txt
-    assert "in addition, never instead" in txt
+    assert "continue the analysis in this host" in txt
+    assert "write video-context.md" in txt
 
 
 def test_extract_defaults_into_downloads(vertical_clip, workdir, monkeypatch,

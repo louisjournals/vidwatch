@@ -938,7 +938,7 @@ def cmd_extract(args) -> int:
             named.append((group[0][0], f"{name}  [{stamps}]"))
 
     brief = td.build_brief(
-        goal=args.goal or "",
+        goal=args.goal or "", intent=args.intent,
         meta=meta, duration=duration, shots=shots, pacing=pacing, gaps=gaps,
         density=density, transcript=trans, cut_method=cut_method,
         frame_files=named,
@@ -966,6 +966,8 @@ def cmd_extract(args) -> int:
             "frames": [{"t": t, "file": n} for t, n in named],
             "shots": len(shots), "cut_method": cut_method,
             "transcript_source": trans.get("source"),
+            "intent": args.intent,
+            "analysis_references": td.analysis_references(args.intent),
         }, indent=2, ensure_ascii=False))
         return 0
 
@@ -982,27 +984,22 @@ def cmd_extract(args) -> int:
     print(f"transcript {trans.get('source')}   shots {len(shots)} via {cut_method}")
     print("")
     print(BAR)
-    print("REQUIRED NEXT STEP - do this before writing anything else")
+    print("REQUIRED NEXT STEP - continue the analysis in this host")
     print(BAR)
-    print("Attach these files to your reply so they can be downloaded:")
-    print("")
+    print("Read brief.md and every generated visual artifact before making visual claims.")
+    print("Evidence files that must be read and later surfaced:")
     print(f"  {out_dir / 'brief.md'}")
     for _, name in named:
         fn = name.partition("  [")[0]
         print(f"  {frame_dir / fn}")
-    print("")
-    print("If this host cannot attach files, print each absolute path above on")
-    print("its own line so they are one click from opening. Printing only the")
-    print("folder is not enough.")
-    print("")
-    print("Attaching the files is the part that must not be skipped. Writing your")
-    print("own read of the video afterwards is fine and often useful - just do it")
-    print("in addition, never instead. Note that brief.md's findings are")
-    print("provisional and each carries a Check: line, so anything you conclude")
-    print("from the brief alone is drawn from less evidence than a reader looking")
-    print("at the sheets will have. Say so if you offer a view.")
-    print("")
-    print("Tell the owner: paste brief.md, upload the sheets.")
+    if args.sheet:
+        print(f"  {out_dir / 'sheet.jpg'}")
+    print("Reading these files must not be skipped; brief.md alone is not visual evidence.")
+    print("Then load the analysis references listed in brief.md, write video-context.md")
+    print("and analyst-report.md beside the evidence, and surface the finished files.")
+    if args.intent is None:
+        print("Intent is not declared: ask paid vs organic before loading an intent-specific")
+        print("reference. Never infer it from the media.")
     if not args.goal:
         print("")
         print("WARNING: --goal was not set, so brief.md does not say what this")
@@ -1155,6 +1152,9 @@ def build_parser() -> argparse.ArgumentParser:
                     help="what the owner wants from this teardown, in their own "
                          "words. Pass it every time - it is the one flag that "
                          "should always be set")
+    ex.add_argument("--intent", choices=("paid", "organic"), default=None,
+                    help="distribution intent declared by the caller. Recorded verbatim "
+                         "in brief.md and never inferred from the media")
     ex.add_argument("--frames", type=int, default=DEFAULT_HANDOFF_FRAMES,
                     help="evenly spaced moments; default is one per second of "
                          "video (min 12, max 120)")

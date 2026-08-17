@@ -20,7 +20,7 @@ cost image tokens — so the real question is *which* evidence to extract.
 
 | Command | Cost | Purpose |
 |---|---|---|
-| `extract` | local preprocessing | Primary handoff command: builds `brief.md` plus timestamped sheets/frames for another model or person to review. |
+| `extract` | local preprocessing | Full-analysis evidence pass: builds `brief.md` plus timestamped sheets/frames; the skill then writes `video-context.md` and `analyst-report.md`. |
 | `quick` | one call | Short clips (under ~3 min): transcript + dense frames in a single pass. Refuses longer clips. |
 | `probe` | 0 image tokens | Duration, transcript, and motion profile. Usually answers the question or narrows the window. |
 | `defects` | 0 image tokens | Deterministic black/freeze/silence/luma/PTS/duplicate-shot locator; nearby hits merge, luma at confirmed cuts is suppressed, and cached transcript gaps suppress normal pauses before visual reading. |
@@ -28,15 +28,22 @@ cost image tokens — so the real question is *which* evidence to extract.
 | `read` | ~5-20k tokens | Dense evidence frames on one bounded window, with optional local burst sampling around candidate timestamps. |
 
 The transcript does the searching. Deterministic detectors locate defects. Frames
-do the seeing.
+do the seeing. For a full scan/review, the skill continues past extraction and
+writes two files beside the evidence: `video-context.md` (what is actually in the
+video) and `analyst-report.md` (the judgment). Short-form strategy loads the shared
+analysis reference plus exactly one declared intent layer: paid or organic.
 
 ```bash
-python3 scripts/vidwatch.py extract ~/Movies/clip.mp4 --goal "review the edit"
+python3 scripts/vidwatch.py extract ~/Movies/clip.mp4 --goal "review the edit" --intent organic
 python3 scripts/vidwatch.py quick   ~/Movies/clip.mp4
 python3 scripts/vidwatch.py probe  "https://youtu.be/..."
 python3 scripts/vidwatch.py defects ~/Movies/clip.mp4
 python3 scripts/vidwatch.py read   ~/Movies/clip.mp4 --start 9:35 --end 9:55 --width 1024
 ```
+
+`--intent paid|organic` is declarative, never inferred. If omitted, `brief.md`
+records `intent not declared` and the analysis layer must ask before loading an
+intent-specific strategy reference.
 
 Downloads, transcripts and scene cuts are cached under `~/.cache/my-vidwatch/`,
 so a follow-up question on the same video costs nothing to set up.
@@ -63,7 +70,7 @@ Full command reference, measurements and rationale: [SKILL.md](SKILL.md).
 ## Tests
 
 ```bash
-python3 -m pytest tests -q     # 135 tests, clips synthesised with ffmpeg, no network
+python3 -m pytest tests -q     # 139 tests, clips synthesised with ffmpeg, no network
 ```
 
 ## Licence
