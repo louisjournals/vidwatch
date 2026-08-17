@@ -9,7 +9,7 @@ description: >
 argument-hint: "<video-url-or-path> [question]"
 allowed-tools: Bash, Read
 user-invocable: true
-version: 2.3.0
+version: 2.3.1
 license: MIT
 ---
 
@@ -43,10 +43,14 @@ but no narrow question. Paid and organic strategy use the same evidence pass but
 **different declared distribution intents**.
 
 1. Run `extract` for every source video in the request.
-2. Read each generated `brief.md` **and every contact sheet/frame artifact**. A
-   transcript or brief alone is not enough for visual claims.
-3. Write the final human-facing analysis as `report.md`.
-4. Surface each machine-owned `brief.md`, the visual evidence, and `report.md` in
+2. Read each generated `brief.md` **before doing any analysis**. If it says
+   `intent not declared`, stop immediately and ask the intent question below as the
+   first user-facing line. Do not inspect the evidence into a diagnosis, load an
+   intent-specific reference, or write any part of `report.md` yet.
+3. Once intent is declared, read every contact sheet/frame artifact. A transcript
+   or brief alone is not enough for visual claims.
+4. Write the final human-facing analysis as `report.md`.
+5. Surface each machine-owned `brief.md`, the visual evidence, and `report.md` in
    the chat. Do not tell the owner to paste/upload them into another model as the
    normal next step.
 
@@ -65,10 +69,21 @@ If the owner already stated a goal, pass it to `--goal` verbatim. If they did
 goal and proceed.
 
 `--intent` is different: pass it **only when the owner/caller has explicitly said
-paid or organic**. The CLI records that fact and never infers it. If it was not
-declared, `brief.md` says `intent not declared`; before intent-specific analysis,
-ask the owner. After they answer, rerun the cached `extract` with that explicit
-`--intent` so the brief becomes the durable record.
+paid or organic**. The CLI records that fact and never infers it. If `brief.md`
+says `intent not declared`, the **first user-facing message must be exactly one
+short question:**
+
+`Paid 还是 organic？`
+
+Do not prepend analysis, explain why the question is needed, list the difference
+between the two intents, or append a partial/shared-only report. Wait for the owner
+to answer one word. Then rerun the cached `extract` with that explicit `--intent`,
+load `shared.md` plus the matching intent reference, and produce the complete
+`report.md` once. Callers who want to avoid this round trip can pass
+`--intent paid|organic` directly on the first `extract`.
+
+Intent is still a distribution-side fact. Never infer it from the footage, CTA,
+brand presence, platform, production polish, or editing style.
 
 ### Required full-scan output — `report.md`
 
@@ -108,8 +123,31 @@ because the extractor mentions them.
 
 `--intent` is **batch-level**, never per-video. Pass the same declared value to
 every `extract` in the batch. Each video keeps its own `brief.md`, and each brief
-records that same batch declaration. If intent is undeclared, ask once for the
-batch and keep the existing no-inference behavior.
+records that same batch declaration. If intent is undeclared, ask **once, before
+any batch analysis**, using the same one-line question above. After the owner
+answers, apply that one declared intent to every cached `extract` in the batch.
+
+For **every batch of 2+ videos, use one parent batch folder**. Do not leave the
+individual handoff folders scattered directly in `~/Downloads`, and do not create
+a separate folder just for the report. Use this layout:
+
+```text
+~/Downloads/<batch>-handoff/
+  report.md
+  <clip-1>-handoff/
+    brief.md
+    frames/
+  <clip-2>-handoff/
+    brief.md
+    frames/
+  ...
+```
+
+Choose a short batch name from the requested clips, e.g. `0895-0897-handoff` for
+0895, 0896 and 0897. Run normal cached `extract` for each source first, then move
+each generated `<clip>-handoff/` folder into the batch parent. `report.md` lives
+**directly in the batch parent** beside those video folders. Never create
+`<batch>-report/`, `report-handoff/`, or another report-only directory.
 
 For **2–5 videos**, output one `report.md` for the whole batch:
 
@@ -134,19 +172,20 @@ For a **single video**, do **not** output a cross-video section at all.
 
 ### Reference loading
 
-Reference loading is intent-gated. Always read `references/shared.md`, then load
-exactly one intent reference named by `brief.md`:
+Reference loading is intent-gated. **Do not load analysis references until intent
+is declared.** Once it is declared, read `references/shared.md` plus exactly one
+matching intent reference:
 
 - `paid` → `references/shared.md` + `references/paid.md`
 - `organic` → `references/shared.md` + `references/organic.md`
-- `not declared` → shared only, then **ask the owner** before intent-specific
-  recommendations; never infer intent from footage, CTA, brand presence, polish,
-  platform or topic.
+- `not declared` → load neither analysis path yet; ask `Paid 还是 organic？` and wait.
 
-Do not load all three references “just in case”. The first three judgment axes and
-all evidence landmines live in shared; paid/organic add only the
-distribution-specific layer. No performance data means the diagnosis is a
-hypothesis; never invent ranking weights, traffic shares or universal benchmarks.
+Do not load all three references “just in case”, and do not produce a shared-only
+partial analysis while waiting. The first three judgment axes and all evidence
+landmines live in shared; paid/organic add only the distribution-specific layer.
+No performance data means the diagnosis is a hypothesis; never invent ranking
+weights, traffic shares or universal benchmarks. Never infer intent from footage,
+CTA, brand presence, platform, production polish, or editing style.
 
 Write `report.md` in the owner's language unless they requested another language.
 
@@ -171,12 +210,13 @@ failure.
 
 **One flag to set, the rest to leave alone.**
 
-- **Do NOT pass `--out`.** Each video's machine evidence belongs in
-  `~/Downloads/<clip>-handoff/`. For a single-video run, write `report.md` in that
-  handoff folder. For a batch, keep each brief/evidence bundle in its own handoff
-  folder and write one batch `report.md` for the run. A session working directory
-  is the wrong place because the owner cannot reliably find or reopen the finished
-  evidence.
+- **Do NOT pass `--out`.** Let `extract` create its normal
+  `~/Downloads/<clip>-handoff/` bundle. For a single-video run, write `report.md`
+  inside that handoff folder. For **2+ videos**, after extraction create one
+  `~/Downloads/<batch>-handoff/` parent, move every generated `<clip>-handoff/`
+  into it, and write the one batch `report.md` directly in that parent. Do not
+  create a separate report folder. A session working directory is the wrong place
+  because the owner cannot reliably find or reopen the finished evidence.
 - **Do NOT pass `--whisper-model` unless the owner is intentionally overriding
   transcription quality/cost.** Leave the CLI default unchanged for normal runs.
 - **Do NOT pass `--frames` or `--grid`.** For `extract`, the default derives the
