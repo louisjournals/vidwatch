@@ -12,9 +12,10 @@ Invoke the `my-vidwatch` skill with the user's arguments: $ARGUMENTS
 - If the user asks for a scan/review/analysis/teardown, or supplies a video with
   no narrow question, follow **Full scan / review / teardown / short-form analysis** mode.
   Run `extract`; pass `--intent paid|organic` only when explicitly declared. Read
-  `brief.md` first. If it says `intent not declared`, the first user-facing line must
-  be only `Paid 还是 organic？`; do not analyse, load references, or write a partial
-  report before the owner answers. Then rerun cached `extract` with that explicit
+  `brief.md` first. **HARD STOP:** if it says `intent not declared`, output no
+  analysis content whatsoever; the first user-facing line must be only
+  `Paid 还是 organic？`. Do not inspect evidence into a diagnosis, load analysis
+  references, or write any partial/shared-only report before the owner answers. Then rerun cached `extract` with that explicit
   `--intent`, inspect all visual evidence, and write the final `report.md`.
 - For 2+ videos, consolidate all generated `<clip>-handoff/` folders under one
   `~/Downloads/<batch>-handoff/` parent and place `report.md` directly in that parent.

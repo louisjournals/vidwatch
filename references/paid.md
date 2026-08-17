@@ -60,6 +60,20 @@ List the top reasons this buyer may still avoid the action, then map footage/cop
 
 Never invent legality, compliance, guarantee or performance claims. Narrow the claim or route uncertainty to the enquiry.
 
+## Paid compliance blockers — substantiation first
+
+For paid distribution, treat an unsubstantiated advertising claim as a **blocker** when it could prevent approval or make the ad non-compliant in the target market. This includes absolute/superlative/exclusivity/quantified claims such as `first`, `best`, `most comprehensive`, `only`, `#1`, `over N`, `largest`, or equivalent wording when the owner has not supplied adequate substantiation.
+
+For Malaysia, the Advertising Standards Malaysia code requires ads to avoid misleading or unsubstantiated representations and notes that general superlative claims are difficult to substantiate. TikTok Ads explicitly disallows absolute terms about a product in relation to time, region, or brand, and lists exaggerated/overstated claims among common reasons ads fail review. Therefore, when the paid platform is unknown, **block paid delivery until the claim is substantiated or narrowed** rather than promising that every platform will reject it.
+
+Do not require the proof to appear inside the video itself when credible owner-supplied or authoritative substantiation exists outside the edit; the analysis must simply be able to verify the claim before approving paid delivery. If no substantiation is available, remove/narrow the claim or replace it with directly provable wording.
+
+Official sources, read 2026-08-17:
+- https://asa.org.my/the-code/list-of-code/the-general-principles-of-advertising/
+- https://asa.org.my/the-code/list-of-code/consumer-protection/
+- https://ads.tiktok.com/help/article/tiktok-ads-policy-misleading-and-false-content?lang=en
+- https://ads.tiktok.com/help/article/common-reasons-ads-fail-review?lang=en
+
 ## CTA and conversion path
 
 Paid creative needs a specific, low-friction next action.

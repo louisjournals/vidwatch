@@ -9,7 +9,7 @@ description: >
 argument-hint: "<video-url-or-path> [question]"
 allowed-tools: Bash, Read
 user-invocable: true
-version: 2.3.1
+version: 2.3.2
 license: MIT
 ---
 
@@ -43,10 +43,11 @@ but no narrow question. Paid and organic strategy use the same evidence pass but
 **different declared distribution intents**.
 
 1. Run `extract` for every source video in the request.
-2. Read each generated `brief.md` **before doing any analysis**. If it says
-   `intent not declared`, stop immediately and ask the intent question below as the
-   first user-facing line. Do not inspect the evidence into a diagnosis, load an
-   intent-specific reference, or write any part of `report.md` yet.
+2. Read each generated `brief.md` **before doing any analysis**. **HARD STOP:** if
+   any brief says `intent not declared`, output no analysis content whatsoever.
+   The first user-facing line must be the intent question below, then wait. Do not
+   inspect visual evidence into a diagnosis, load analysis references, draft a
+   shared-only partial report, or write any part of `report.md` before the answer.
 3. Once intent is declared, read every contact sheet/frame artifact. A transcript
    or brief alone is not enough for visual claims.
 4. Write the final human-facing analysis as `report.md`.
@@ -93,8 +94,10 @@ not by a global fact/inference split.
 
 For one video, use this order:
 
-1. **Blockers** — only when present; anything that makes the current deliverable
-   unusable or changes the production class (re-render/reshoot) goes first.
+1. **Blockers** — mandatory for every video. Always render this section. If no
+   blocker is found, write `无`. A blocker is a delivery/publishing stop condition,
+   not merely the most severe improvement suggestion; apply the definition in
+   `references/shared.md` and any matching intent-specific compliance rules.
 2. **判断 / Judgment** — one sentence.
 3. **哪里好 / What works** — only the strengths that matter to the decision.
 4. **哪里要改 / What to change** — ranked by impact.

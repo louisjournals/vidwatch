@@ -46,7 +46,13 @@ For each axis use a short qualitative judgment such as `Strong / Mixed / Weak / 
 
 ### Blockers outrank the axes
 
-A **blocker** is a finding that makes the current deliverable unusable or makes a proposed fix impossible without a different production action: for example an export below the intended delivery floor, a baked-in false claim/critical typo that requires the project file, or a required proof shot that does not exist. Put blockers above all other judgments. Never average a blocker together with otherwise competent structure and produce a reassuring middle score.
+A **blocker** is a stop condition that prevents the current version from being safely delivered, published, or used for its declared distribution intent. It is **not** simply the most severe improvement suggestion. Check three classes every time:
+
+- **Technical delivery failure** — below the applicable platform/delivery specification, corrupted/unusable media, or another technical condition that makes the current export unshippable.
+- **Compliance / substantiation risk** — a claim, comparison, guarantee, superlative, exclusivity statement, quantified claim, or other advertising statement that cannot be substantiated well enough for the declared market/platform. For paid intent, apply the stricter rules in `paid.md`.
+- **Critical factual error in a persuasion-critical position** — false or materially wrong baked-in text/data in the hook, proof, offer, CTA, price, location, guarantee, product identity, or other key selling position. Ordinary wording polish is not a blocker.
+
+A missing proof shot can also be a blocker when the creative requires that proof to make a key claim deliverable and editing cannot create it. Put blockers above all other judgments. **Every video must render a `Blockers` section; when none are found, write `无`.** Never average a blocker together with otherwise competent structure and produce a reassuring middle score.
 
 ## Frame 0 and first 1.5 seconds
 
