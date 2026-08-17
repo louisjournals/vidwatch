@@ -4,21 +4,21 @@ Load **after `shared.md`** only when `brief.md` declares `Intent: organic`. Do n
 
 Organic analysis asks whether the piece gives viewers reasons to keep watching, send, save, replay, discover the topic, and understand why this creator/account is worth another view. Use the account's own comparable posts as the performance baseline; do not import universal ranking weights or benchmark percentages.
 
-## Organic scoring after the shared three axes
+## Organic judgment axes after the shared three
 
-The first three axes are defined in `shared.md`:
+The first three qualitative axes are defined in `shared.md`:
 
 1. Frame 0 + Hook
 2. Retention
 3. Payoff + Proof
 
-Then score organic-specific axes:
+Then add organic-specific judgments:
 
 4. **Send / Save / Replay value** — is there a concrete social, future-use or rewatch reason?
 5. **Search + topic clarity** — can a new viewer understand the topic and phrase it clearly enough to seek/recognise it again?
 6. **Originality + creator ownership** — could this only come from this creator/account, or could anyone post it unchanged?
 
-Report execution risk separately from the average.
+Use short qualitative judgments with evidence. **Do not calculate a cross-axis average.** Any blocker from `shared.md` stays above the evaluation rather than being diluted by stronger axes. Report execution risk separately.
 
 ## Sends, saves and replays — ask behavior questions, not weights
 
@@ -187,14 +187,6 @@ For ad-specific TikTok dimensions, duration and safe-zone requirements, use `pai
 
 ## Organic output
 
-Keep it decision-oriented:
-
-1. 2–3 biggest diagnosis points
-2. shared + organic score
-3. one stronger beat structure / rewritten cut when requested
-4. hook tests when useful
-5. Trial/test plan when useful
-6. caption/search phrase only when the owner asked for a posting package
-7. one non-negotiable note
+Follow the report structure in `SKILL.md`. Within it, include the organic-specific judgments and the strongest next edit/test when relevant. Do not add an overall numeric score.
 
 When generating concepts rather than reviewing an existing video, name the mechanism, the exact frame-0 action, the promise, the payoff and the intended ending behavior. Do not promise virality.

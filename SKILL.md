@@ -9,7 +9,7 @@ description: >
 argument-hint: "<video-url-or-path> [question]"
 allowed-tools: Bash, Read
 user-invocable: true
-version: 2.2.0
+version: 2.3.0
 license: MIT
 ---
 
@@ -17,8 +17,8 @@ license: MIT
 
 One skill owns the whole evidence-to-judgment loop. **Do not stop after extracting
 frames and a brief when the user asked for a full scan, review, teardown, or
-analysis.** The scan is evidence collection; the job is not done until the
-context and analyst report are written.
+analysis.** The scan is evidence collection; the job is not done until `report.md`
+is written.
 
 ## Choose the path
 
@@ -32,8 +32,8 @@ pricing".
 - Longer video: `probe` first, then `scan` only when location is unknown, then a
   narrow `read` when visual detail is needed.
 - Answer the question directly from the evidence.
-- Do **not** force `video-context.md` or `analyst-report.md` for a narrow question
-  unless the user also asked for a full analysis.
+- Do **not** force `report.md` for a narrow question unless the user also asked
+  for a full analysis.
 
 ### B — Full scan / review / teardown / short-form analysis
 
@@ -42,24 +42,27 @@ compare, or strategise around a whole video, or invokes `my-vidwatch` with a vid
 but no narrow question. Paid and organic strategy use the same evidence pass but
 **different declared distribution intents**.
 
-1. Run `extract`.
-2. Read the generated `brief.md` **and every contact sheet/frame artifact**. A
+1. Run `extract` for every source video in the request.
+2. Read each generated `brief.md` **and every contact sheet/frame artifact**. A
    transcript or brief alone is not enough for visual claims.
-3. Write `video-context.md` in the same handoff folder.
-4. Write `analyst-report.md` in the same handoff folder.
-5. Surface `brief.md`, `video-context.md`, `analyst-report.md`, and the visual
-   evidence files in the chat. Do not tell the owner to paste/upload them into
-   another model as the normal next step.
+3. Write the final human-facing analysis as `report.md`.
+4. Surface each machine-owned `brief.md`, the visual evidence, and `report.md` in
+   the chat. Do not tell the owner to paste/upload them into another model as the
+   normal next step.
+
+`brief.md` stays machine-owned. Never rewrite, merge, summarise into, or replace it
+with model-authored prose. It is the extraction record. If the model thinks the
+brief is wrong, say so in `report.md`; do not silently mutate the input record.
 
 ```bash
 python3 SCRIPTS/vidwatch.py extract "<url-or-path>" \
-  --goal "<owner goal, or default full video context + analyst report>" \
+  --goal "<owner goal, or default full video report>" \
   [--intent paid|organic]
 ```
 
 If the owner already stated a goal, pass it to `--goal` verbatim. If they did
-**not** state one, do **not** stop to ask: use `full video context + analyst
-report` as the default goal and proceed.
+**not** state one, do **not** stop to ask: use `full video report` as the default
+goal and proceed.
 
 `--intent` is different: pass it **only when the owner/caller has explicitly said
 paid or organic**. The CLI records that fact and never infers it. If it was not
@@ -67,43 +70,85 @@ declared, `brief.md` says `intent not declared`; before intent-specific analysis
 ask the owner. After they answer, rerun the cached `extract` with that explicit
 `--intent` so the brief becomes the durable record.
 
-### Required full-scan outputs
+### Required full-scan output — `report.md`
 
-`video-context.md` is the evidence record. Keep fact and inference separate. It
-must cover, when observable:
+The final human-facing analysis is **one `report.md`**, not separate context and
+analyst files. Organise for reading order — conclusion first, evidence second —
+not by a global fact/inference split.
 
-- source metadata, duration, aspect/resolution, sampling/coverage
-- what the video is doing and its apparent objective/audience
-- timestamped scene/shot/timeline map and major state changes
-- speech/VO summary plus transcript reliability warnings
-- on-screen text, brand/product/model names verified from frames rather than
-  trusted from Whisper alone
-- people, setting, product/service, actions, offers, proof, CTA and conversion
-  path actually visible/audible
-- hook/opening mechanics, strongest proof timestamp, and for ads the proof's
-  first-appearance percentage of runtime
-- material usability: low resolution, burned-in text, watermarks, subtitle
-  obstruction, obvious defects, reusable VO, and uncertain/missing evidence
-- concise key timestamps for later editing or review
+For one video, use this order:
 
-`analyst-report.md` is the judgment layer. It must answer the owner's stated goal
-using the evidence in `video-context.md` plus the frames. Be direct and specific;
-do not reprint the transcript.
+1. **Blockers** — only when present; anything that makes the current deliverable
+   unusable or changes the production class (re-render/reshoot) goes first.
+2. **判断 / Judgment** — one sentence.
+3. **哪里好 / What works** — only the strengths that matter to the decision.
+4. **哪里要改 / What to change** — ranked by impact.
+5. **怎么改 / How to change** — executable recut/re-render/reshoot/test actions.
+6. **依据 / Evidence**
+   - timeline
+   - names/text observed from sampled frames, with provenance labels
+   - retention boundary table using visual evidence + shot-table timing
+   - claim/proof audit
+   - material usability
 
-**Reference loading is intent-gated.** Always read `references/shared.md`, then
-load exactly one intent reference named by `brief.md`:
+Each judgment appears **once**. Evidence supports it later; do not restate the same
+360p issue, typo, proof-placement percentage, unsupported claim, or timeline point
+in several sections.
+
+`brief.md` remains the untouched machine record. `report.md` may disagree with it,
+but never edits or rewrites it.
+
+The current `extract` CLI may still print legacy next-step names for the former
+`video-context.md` + `analyst-report.md` handoff. That stdout is extraction-layer
+legacy prose, not the final artifact contract. **This SKILL.md owns the final
+analysis output: write `report.md` only.** Do not create the two legacy files just
+because the extractor mentions them.
+
+### Multiple videos in one run
+
+`--intent` is **batch-level**, never per-video. Pass the same declared value to
+every `extract` in the batch. Each video keeps its own `brief.md`, and each brief
+records that same batch declaration. If intent is undeclared, ask once for the
+batch and keep the existing no-inference behavior.
+
+For **2–5 videos**, output one `report.md` for the whole batch:
+
+- Start with **跨视频重复项 / Cross-video repeated findings**. Include only issues,
+  strengths, template defects, proof patterns, or structural mechanisms that occur
+  in at least two videos. Maximum **5** items. If nothing repeats, leave this
+  section empty rather than inventing a theme.
+- Then give each video its own compact section using the single-video order above.
+- A repeated issue belongs in the cross-video section once; per-video sections may
+  point to its local timestamp but must not re-explain the same diagnosis.
+
+The point of this section is to find system/template failures that a single-video
+report cannot see. Example: the same `LOW BEAN` burned-in graphic in 0896 and 0897
+is not two independent spelling errors; it is a shared template defect, so the fix
+belongs in the template/project source rather than two export-specific patches.
+
+For **more than 5 videos**, keep the batch `report.md` to the cross-video section
+plus one-sentence judgment per video. Put detailed per-video analysis in separate
+files inside each video's own handoff folder so the batch report stays usable.
+
+For a **single video**, do **not** output a cross-video section at all.
+
+### Reference loading
+
+Reference loading is intent-gated. Always read `references/shared.md`, then load
+exactly one intent reference named by `brief.md`:
 
 - `paid` → `references/shared.md` + `references/paid.md`
 - `organic` → `references/shared.md` + `references/organic.md`
-- `not declared` → shared only, then **ask the owner** before continuing; never
-  infer intent from the footage, CTA, brand presence, polish, platform or topic.
+- `not declared` → shared only, then **ask the owner** before intent-specific
+  recommendations; never infer intent from footage, CTA, brand presence, polish,
+  platform or topic.
 
-Do not load all three references “just in case”. The first three score axes and all
-evidence landmines live in shared; paid/organic add only the distribution-specific
-judgment layer. No performance data means the diagnosis is a hypothesis; never
-invent ranking weights, traffic shares or universal benchmarks.
+Do not load all three references “just in case”. The first three judgment axes and
+all evidence landmines live in shared; paid/organic add only the
+distribution-specific layer. No performance data means the diagnosis is a
+hypothesis; never invent ranking weights, traffic shares or universal benchmarks.
 
-Write both files in the owner's language unless they requested another language.
+Write `report.md` in the owner's language unless they requested another language.
 
 ### Acquisition fallback for URLs
 
@@ -126,10 +171,12 @@ failure.
 
 **One flag to set, the rest to leave alone.**
 
-- **Do NOT pass `--out`.** Output belongs in `~/Downloads/<clip>-handoff/` so
-  `brief.md`, visual evidence, `video-context.md`, and `analyst-report.md` stay
-  together in one predictable place. A session or working directory is the wrong
-  place because the owner cannot reliably find or reopen the finished evidence.
+- **Do NOT pass `--out`.** Each video's machine evidence belongs in
+  `~/Downloads/<clip>-handoff/`. For a single-video run, write `report.md` in that
+  handoff folder. For a batch, keep each brief/evidence bundle in its own handoff
+  folder and write one batch `report.md` for the run. A session working directory
+  is the wrong place because the owner cannot reliably find or reopen the finished
+  evidence.
 - **Do NOT pass `--whisper-model` unless the owner is intentionally overriding
   transcription quality/cost.** Leave the CLI default unchanged for normal runs.
 - **Do NOT pass `--frames` or `--grid`.** For `extract`, the default derives the
@@ -147,7 +194,7 @@ keeps each tile useful while limiting upload count. Adjust with `--frames`,
 **Targeted question on a short clip (under ~3 minutes)? Use `quick` and stop.**
 One pass, transcript plus dense frames. This shortcut belongs to **Path A only**.
 A full scan/review in **Path B still uses `extract` regardless of duration** so it
-can create the evidence bundle and the two required reports.
+can create the evidence bundle for the required `report.md`.
 
 ```
 quick   short clips: transcript + dense frames      one call
@@ -172,8 +219,8 @@ command and open a JPEG can drive this — no host-specific tooling required.
 ## Rules
 
 1. **Path A only: under ~3 minutes, use `quick`.** Path B full analysis uses
-   `extract` at every duration because it must produce the evidence bundle and
-   reports.
+   `extract` at every duration because it must produce the evidence bundle for
+   `report.md`.
 2. **Path A only: never skip `probe` on a long video.** Reading frames first
    spends the budget before you know where the answer is.
 3. **Never `read` a window wider than 10 minutes.** The tool refuses by design.

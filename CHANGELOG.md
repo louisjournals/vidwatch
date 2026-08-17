@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.3.0
+
+- **A — visual-first retention:** retention boundaries now require sampled-frame evidence before content reasoning. Every boundary records visible change, shot length versus the clip average, reading load and only then the content bridge. No visible change is debt even when the argument flows; boundaries without visual evidence are unscored. The shot table is mandatory, including every shot over 2× the clip average and its runtime share. The 0897 problem-list and branch-block examples document cases where good content and weak visuals point in opposite directions.
+- **B — honest judgment:** removed cross-axis averages and stopped presenting broad editorial judgments as measurements. Shared/paid/organic axes are qualitative; blocker-level findings sit above them and are never diluted. Retention debt keeps its numerator/denominator only because every counted failure now requires visual evidence plus timing provenance.
+- **C — one report + batch comparison:** full analysis now writes one human-facing `report.md`; `brief.md` stays machine-owned and is never rewritten. Reports lead with judgment/actions and place timeline, names, retention evidence, claim/proof and material usability underneath. Multi-video runs use one batch-level intent, add at most five genuinely repeated cross-video findings, and collapse shared template defects such as repeated `LOW BEAN` into one system-level issue. Runs over five videos keep the batch report compact and move detailed per-video analysis into separate files.
+- **D — real-run guardrails:** kinetic supers sampled around 1 fps cannot become confirmed typo findings from an intermediate animation state; sampled-frame observations are labelled separately from machine measurements; recut, re-render and reshoot are distinct cost classes; and paid reports must identify controlled test variants rather than delivering only one supposedly perfect cut.
+
 ## 2.2.0
 
 - **A — explicit distribution intent:** `extract` accepts only `--intent paid|organic`, records the caller-declared value in `brief.md`, and writes `intent not declared` when omitted. The CLI never infers distribution intent; undeclared briefs require the analysis layer to ask before loading intent-specific strategy.

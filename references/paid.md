@@ -100,24 +100,27 @@ Interpret patterns as hypotheses to test:
 
 Views/reach alone do not prove a paid creative is a winner.
 
-## Paid scoring after the shared three axes
+## Paid judgment axes after the shared three
 
-The first three axes are defined in `shared.md`:
+The first three qualitative axes are defined in `shared.md`:
 
 1. Frame 0 + Hook
 2. Retention
 3. Payoff + Proof
 
-Then score paid-specific axes:
+Then add paid-specific judgments:
 
 4. **Offer + objection handling** — is there a real offer/risk reduction and does the creative address the key reason not to act?
 5. **CTA + conversion path** — is the next step singular, specific, readable and matched to the destination?
 6. **Message clarity** — one hero message; price/location/scope legible when they matter?
 7. **Ownership / differentiation** — could a competitor swap in its logo without changing the creative?
 
-Report separately from the score:
+Use short qualitative judgments with evidence. **Do not calculate a cross-axis average.** A blocker from `shared.md` stays above the whole evaluation and is never diluted by stronger axes.
+
+Report separately:
 
 - recut difficulty: Low / Medium / High
+- re-render requirement: None / Recommended / Required
 - reshoot requirement: None / Recommended / Required
 - execution risk: Low / Medium / High
 - material usability: picture, text defects, audio/VO, proof availability
@@ -166,15 +169,19 @@ Rules:
 
 For multi-source rebuilds, make a function map and gap matrix first. Choose the source with the best structure as the skeleton and the source with the best picture as the body; they need not be the same file.
 
-## Test plan
+## Testable paid variants — required
 
-Prefer tests that move one meaningful variable at a time while keeping the rest of the timeline constant:
+Paid analysis should not end with one supposedly perfect cut. Deliver a small family of controlled variants the owner can actually test. Keep one meaningful variable different while holding the rest of the timeline constant.
 
-- frame-0 / hook
-- proof order / payoff placement
-- offer or CTA
+Always identify which of these are testable for the current footage:
 
-State what is held constant and what result would change the next decision.
+- **hook / frame 0** — visual opening or first spoken/on-screen line
+- **thumbnail / cover frame** — where the placement exposes a selectable preview/cover
+- **proof order / payoff placement**
+- **offer framing**
+- **CTA copy / requested action**
+
+Give at least two useful variants when the material supports them, name the single variable changed, and state what evidence/result would change the next creative decision. Do not deliver only one recut and call the testing job finished.
 
 ## Placement and technical facts — official sources only
 
@@ -208,12 +215,6 @@ Official sources, read 2026-08-17:
 
 ## Paid output
 
-Scale to the job. A compact single-creative review can be:
+Follow the report structure in `SKILL.md`. Within it, make sure paid analysis includes the paid-specific judgments, conversion-path diagnosis, and **testable variants**. Do not add an overall numeric score.
 
-1. executive verdict
-2. 2–3 biggest diagnosis points
-3. shared + paid score
-4. rebuilt cut / EDL when requested
-5. one non-negotiable note
-
-A multi-source rebuild can additionally include function map, gap matrix, material allocation, reshoot list and controlled test plan. Do not pad the report, but do not omit executable rebuild artefacts when the owner asked for them.
+A multi-source rebuild can additionally include function map, gap matrix, material allocation, re-render/reshoot list and controlled test plan. Do not pad the report, but do not omit executable rebuild artefacts when the owner asked for them.
