@@ -3,7 +3,7 @@
 ## Record status
 
 The original untracked review file was not present in the repository, elsewhere under
-`/Users/louistan`, or in Trash when Group E was closed on 2026-08-17. This file is a
+the local user home directory, or in Trash when Group E was closed on 2026-08-17. This file is a
 **recovered closeout record**, not a reconstruction of unavailable prose. It records
 only the review findings explicitly referenced by the accepted closeout instructions;
 no unspecified review content is invented.
